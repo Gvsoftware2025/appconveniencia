@@ -1,10 +1,10 @@
 {
-  "name": "my-v0-project",
+  "name": "APP Conveniência Rives",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
+    "build": "GV SOFTWARE",
+    "dev": "GV SOFTWARE",
     "lint": "next lint",
     "start": "next start"
   },
