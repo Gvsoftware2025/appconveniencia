@@ -4,9 +4,9 @@ import { PedidosProvider } from "@/contexts/pedidos-context"
 import { ToastProvider } from "@/components/toast-notification"
 
 export const metadata = {
-  title: "Conveniência Rives",
-  description: "Created by GV Software",
-  generator: "gv_software",
+  title: "Sistema Conveniência - Gestão de Pedidos",
+  description: "Sistema completo para gestão de pedidos, comandas e pagamentos",
+  generator: "v0.app",
 }
 
 export default function RootLayout({

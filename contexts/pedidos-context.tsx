@@ -79,6 +79,7 @@ interface PedidosContextType {
   criarComanda: (nomeComanda: string) => Promise<string>
   updateComanda: (comandaId: string, updates: Partial<Comanda>) => Promise<void>
   finalizarComanda: (comandaId: string) => Promise<void>
+  excluirComanda: (comandaId: string) => Promise<void>
   adicionarItensComanda: (
     comandaId: string,
     itens: Array<{ produto_id: string; quantidade: number; observacoes?: string }>,
@@ -151,8 +152,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         .or("status.is.null,status.neq.entregue")
 
       const [comandasResult, pedidosResult] = await Promise.all([
-        withTimeout(comandasPromise, 30000, "Comandas refresh"),
-        withTimeout(pedidosPromise, 30000, "Pedidos refresh"),
+        withTimeout(comandasPromise, 90000, "Comandas refresh"),
+        withTimeout(pedidosPromise, 90000, "Pedidos refresh"),
       ])
 
       const { data: comandasData, error: comandasError } = comandasResult as any
@@ -196,7 +197,9 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Don't throw error, just log and continue with existing data
+      if (newRetryCount >= 3) {
+        console.warn("[v0] Multiple refresh failures, extending retry interval")
+      }
     } finally {
       setIsRefreshing(false)
     }
@@ -283,7 +286,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       () => {
         if (!isRefreshing) {
           const timeSinceLastSuccess = Date.now() - lastSuccessfulRefresh
-          const maxInterval = 5 * 60 * 1000 // 5 minutes max
+          const maxInterval = 10 * 60 * 1000 // 10 minutes max
 
           // Skip refresh if it's been too long since last success (likely connection issues)
           if (timeSinceLastSuccess > maxInterval) {
@@ -294,8 +297,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
           refreshData()
         }
       },
-      Math.min(60000 + retryCount * 15000, 180000),
-    ) // Start at 60s, increase by 15s per failure, max 3 minutes
+      Math.min(90000 + retryCount * 30000, 300000),
+    ) // Start at 90s, increase by 30s per failure, max 5 minutes
 
     return () => clearInterval(refreshInterval)
   }, []) // Removed retryCount dependency to prevent interval recreation
@@ -556,6 +559,37 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const excluirComanda = async (comandaId: string) => {
+    try {
+      console.log("[v0] Excluindo comanda:", comandaId)
+
+      // Delete all pedidos from this comanda first
+      const { error: pedidosError } = await supabase.from("pedidos").delete().eq("comanda_id", comandaId)
+
+      if (pedidosError) {
+        console.error("[v0] Erro ao excluir pedidos da comanda:", pedidosError)
+        throw pedidosError
+      }
+
+      // Then delete the comanda
+      const { error: comandaError } = await supabase.from("comandas").delete().eq("id", comandaId)
+
+      if (comandaError) {
+        console.error("[v0] Erro ao excluir comanda:", comandaError)
+        throw comandaError
+      }
+
+      // Remove from local state
+      setComandas((prev) => prev.filter((c) => c.id !== comandaId))
+      setPedidos((prev) => prev.filter((p) => p.comanda_id !== comandaId))
+
+      console.log("[v0] Comanda excluída com sucesso")
+    } catch (error) {
+      console.error("[v0] Erro ao excluir comanda:", error)
+      throw error
+    }
+  }
+
   const addPedido = async (pedidoData: Omit<Pedido, "id" | "tempo_pedido">) => {
     const { data, error } = await supabase
       .from("pedidos")
@@ -685,6 +719,24 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       }
 
       if (pedidosToUpdate.length > 0 || pedidosToInsert.length > 0) {
+        // Calculate new total from all pedidos in this comanda
+        const { data: allPedidos, error: totalError } = await supabase
+          .from("pedidos")
+          .select("subtotal")
+          .eq("comanda_id", comandaId)
+          .or("status.is.null,status.neq.entregue")
+
+        if (totalError) throw totalError
+
+        const novoTotal = allPedidos?.reduce((total, pedido) => total + (pedido.subtotal || 0), 0) || 0
+
+        // Update comanda total in database
+        const { error: updateError } = await supabase.from("comandas").update({ total: novoTotal }).eq("id", comandaId)
+
+        if (updateError) throw updateError
+
+        console.log(`[v0] Total da comanda atualizado para: R$ ${novoTotal.toFixed(2)}`)
+
         await refreshData()
       }
     } catch (error) {
@@ -737,6 +789,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         criarComanda, // New simplified function
         updateComanda,
         finalizarComanda,
+        excluirComanda,
         adicionarItensComanda,
         getPedidosByComanda, // New direct function
         calcularTotalComanda, // New calculation function

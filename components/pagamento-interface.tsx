@@ -34,16 +34,19 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   const [contaFechada, setContaFechada] = useState(false)
   const [comandaSelecionada, setComandaSelecionada] = useState<any>(null)
   const [incluirTaxaServico, setIncluirTaxaServico] = useState(false)
-  const [valorPago, setValorPago] = useState("") // Ensure string initialization
+  const [valorPago, setValorPago] = useState("")
   const [mostrarTroco, setMostrarTroco] = useState(false)
-  const [modoPagamento, setModoPagamento] = useState<"total" | "parcial" | "dividir">("total")
+  const [modoPagamento, setModoPagamento] = useState<"total" | "parcial" | "dividir" | "itens">("total")
   const [itensPagamento, setItensPagamento] = useState<ItemPagamento[]>([])
+  const [valorPagamentoParcial, setValorPagamentoParcial] = useState("")
+  const [itensSelecionados, setItensSelecionados] = useState<{ [key: string]: number }>({})
   const [divisaoConta, setDivisaoConta] = useState<DivisaoConta>({
     numeroPessoas: 2,
     valorPorPessoa: 0,
     itensIndividuais: [],
   })
   const [itensPagos, setItensPagos] = useState<ItemPagamento[]>([])
+  const [subModoParcial, setSubModoParcial] = useState<"valor" | "itens">("valor")
 
   const comandasAbertas = useMemo(() => {
     console.log("[v0] Todas as comandas:", comandas)
@@ -82,6 +85,15 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     return totalBruto - totalPago
   }, [comandaSelecionada, calcularTotalComanda, itensPagos])
 
+  const valorOriginalComanda = useMemo(() => {
+    if (!comandaSelecionada) return 0
+    return calcularTotalComanda(comandaSelecionada.id)
+  }, [comandaSelecionada, calcularTotalComanda])
+
+  const valorJaPago = useMemo(() => {
+    return itensPagos.reduce((total, item) => total + item.quantidadePaga * item.precoUnitario, 0)
+  }, [itensPagos])
+
   const taxaServico = useMemo(() => {
     return incluirTaxaServico ? valorTotal * 0.1 : 0
   }, [incluirTaxaServico, valorTotal])
@@ -107,9 +119,20 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
       modoPagamento === "dividir"
         ? calcularDivisaoConta()
         : modoPagamento === "parcial"
-          ? calcularTotalParcial()
+          ? subModoParcial === "valor"
+            ? valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0
+              ? Number.parseFloat(valorPagamentoParcial) +
+                (incluirTaxaServico ? Number.parseFloat(valorPagamentoParcial) * 0.1 : 0)
+              : 0
+            : calcularTotalItensSelecionados() + (incluirTaxaServico ? calcularTotalItensSelecionados() * 0.1 : 0)
           : totalFinal
     return valorPagoNum - total
+  }
+
+  const calcularRestanteParcial = () => {
+    const valorPagoNum = Number.parseFloat(valorPagamentoParcial) || 0
+    const totalComanda = valorTotal + (incluirTaxaServico ? valorTotal * 0.1 : 0)
+    return Math.max(0, totalComanda - valorPagoNum)
   }
 
   const handleQuantidadeChange = (pedidoId: string, novaQuantidade: number) => {
@@ -133,7 +156,11 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     setModoPagamento("total")
     setMetodoPagamento("")
     setValorPago("")
+    setValorPagamentoParcial("")
     setMostrarTroco(false)
+    setItensPagos([])
+    setItensPagamento([])
+    setItensSelecionados({})
   }
 
   const handleFecharConta = async () => {
@@ -161,34 +188,40 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
       if (modoPagamento === "total") {
         await finalizarComanda(comandaSelecionada.id)
       } else if (modoPagamento === "parcial") {
-        const itensPagosAgora = itensPagamento.filter((item) => item.quantidadePaga > 0)
-        console.log("[v0] Itens sendo pagos agora:", itensPagosAgora)
+        const valorPagoNum = Number.parseFloat(valorPagamentoParcial) || 0
+        if (valorPagoNum > 0) {
+          const novoItemPago: ItemPagamento = {
+            pedidoId: `pagamento-${Date.now()}`,
+            produtoNome: "Pagamento Parcial",
+            precoUnitario: valorPagoNum,
+            quantidadeTotal: 1,
+            quantidadePaga: 1,
+            quantidadeRestante: 0,
+          }
 
-        setItensPagos((prev) => {
-          const novosItensPagos = [...prev]
+          setItensPagos((prev) => [...prev, novoItemPago])
+        }
 
-          itensPagosAgora.forEach((itemPago) => {
-            const existingIndex = novosItensPagos.findIndex((item) => item.pedidoId === itemPago.pedidoId)
-
-            if (existingIndex >= 0) {
-              // Update existing paid item
-              novosItensPagos[existingIndex] = {
-                ...novosItensPagos[existingIndex],
-                quantidadePaga: novosItensPagos[existingIndex].quantidadePaga + itemPago.quantidadePaga,
-              }
-            } else {
-              // Add new paid item
-              novosItensPagos.push(itemPago)
-            }
-          })
-
-          console.log("[v0] Itens pagos atualizados:", novosItensPagos)
-          return novosItensPagos
-        })
-
-        // Reset payment form but keep the comanda selected
         setMetodoPagamento("")
         setValorPago("")
+        setValorPagamentoParcial("")
+        setMostrarTroco(false)
+        setProcessando(false)
+        return
+      } else if (modoPagamento === "itens") {
+        const itensSelecionadosArray = Object.keys(itensSelecionados).map((key) => ({
+          pedidoId: key,
+          produtoNome: pedidos.find((p) => p.id === key)?.produto?.nome || "Produto não encontrado",
+          precoUnitario: pedidos.find((p) => p.id === key)?.preco_unitario || 0,
+          quantidadeTotal: itensSelecionados[key],
+          quantidadePaga: itensSelecionados[key],
+          quantidadeRestante: 0,
+        }))
+
+        setItensPagos((prev) => [...prev, ...itensSelecionadosArray])
+        setMetodoPagamento("")
+        setValorPago("")
+        setValorPagamentoParcial("")
         setMostrarTroco(false)
         setProcessando(false)
         return
@@ -207,6 +240,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
         setItensPagamento([])
         setDivisaoConta({ numeroPessoas: 2, valorPorPessoa: 0, itensIndividuais: [] })
         setItensPagos([])
+        setItensSelecionados({})
         // onBack() removed - user stays in payment interface
       }, 2000)
     } catch (error) {
@@ -224,6 +258,20 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
       setMostrarTroco(false)
       setValorPago("")
     }
+  }
+
+  const handleItemSelection = (pedidoId: string, quantidade: number) => {
+    setItensSelecionados((prev) => ({
+      ...prev,
+      [pedidoId]: Math.max(0, quantidade),
+    }))
+  }
+
+  const calcularTotalItensSelecionados = () => {
+    return pedidosDaComandaSelecionada.reduce((total, pedido) => {
+      const quantidadeSelecionada = itensSelecionados[pedido.id] || 0
+      return total + quantidadeSelecionada * (pedido.preco_unitario || 0)
+    }, 0)
   }
 
   useEffect(() => {
@@ -254,30 +302,12 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
             quantidadeRestante: quantidadeRestante,
           }
         })
-        .filter((item) => item.quantidadeTotal > 0) // Only include items with remaining quantity
+        .filter((item) => item.quantidadeTotal > 0)
 
       console.log("[v0] Novos itens para pagamento:", novosItens)
       setItensPagamento(novosItens)
     }
   }, [comandaSelecionada, pedidosDaComandaSelecionada.length, itensPagos])
-
-  const valorTotalGeral = useMemo(() => {
-    return comandasAbertas.reduce((total, comanda) => {
-      return total + calcularTotalComanda(comanda.id)
-    }, 0)
-  }, [comandasAbertas, calcularTotalComanda])
-
-  const totalItensGeral = useMemo(() => {
-    return comandasAbertas.reduce((total, comanda) => {
-      const pedidosDaComanda = getPedidosByComanda(comanda.id)
-      return total + pedidosDaComanda.length
-    }, 0)
-  }, [comandasAbertas, getPedidosByComanda])
-
-  const mediaItensPorComanda = useMemo(() => {
-    if (comandasAbertas.length === 0) return 0
-    return Math.round(totalItensGeral / comandasAbertas.length)
-  }, [totalItensGeral, comandasAbertas.length])
 
   if (contaFechada) {
     return (
@@ -372,7 +402,9 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       <CreditCard className="w-6 h-6 text-emerald-400" />
                     </div>
                     <div>
-                      <p className="text-3xl font-bold text-white">R$ {valorTotalGeral.toFixed(2)}</p>
+                      <p className="text-3xl font-bold text-white">
+                        R$ {calcularTotalComanda(comandasAbertas[0].id).toFixed(2)}
+                      </p>
                       <p className="text-gray-300">Valor Total</p>
                     </div>
                   </div>
@@ -387,7 +419,9 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       <Users className="w-6 h-6 text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-3xl font-bold text-white">{mediaItensPorComanda}</p>
+                      <p className="text-3xl font-bold text-white">
+                        {Math.round(pedidos.length / comandasAbertas.length)}
+                      </p>
                       <p className="text-gray-300">Itens por Comanda</p>
                     </div>
                   </div>
@@ -431,7 +465,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
                 <div className="mb-6">
                   <label className="block text-white font-medium mb-3">Tipo de Pagamento</label>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {[
                       { id: "total", label: "Conta Total", icon: CreditCard },
                       { id: "parcial", label: "Pagamento Parcial", icon: Calculator },
@@ -455,44 +489,172 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
                 {modoPagamento === "parcial" && (
                   <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-white mb-3">Selecionar Itens para Pagamento</h3>
-                    <div className="space-y-3">
-                      {itensPagamento.map((item) => (
-                        <div
-                          key={item.pedidoId}
-                          className="flex justify-between items-center p-3 backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl"
+                    <h3 className="text-lg font-semibold text-white mb-3">Pagamento Parcial</h3>
+
+                    <div className="mb-4 p-4 backdrop-blur-xl bg-purple-500/10 border border-purple-400/30 rounded-xl">
+                      <div className="text-center">
+                        <p className="text-purple-400 font-bold text-2xl">R$ {valorOriginalComanda.toFixed(2)}</p>
+                        <p className="text-purple-300 text-sm">Valor Total da Compra</p>
+                        {incluirTaxaServico && (
+                          <p className="text-purple-300/70 text-xs mt-1">(Inclui taxa de serviço de 10%)</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {valorJaPago > 0 && (
+                      <div className="mb-4 grid grid-cols-2 gap-3">
+                        <div className="p-3 bg-green-500/20 border border-green-400/30 rounded-lg text-center">
+                          <p className="text-green-400 font-bold text-lg">R$ {valorJaPago.toFixed(2)}</p>
+                          <p className="text-green-300 text-sm">Já Pago</p>
+                        </div>
+                        <div className="p-3 bg-orange-500/20 border border-orange-400/30 rounded-lg text-center">
+                          <p className="text-orange-400 font-bold text-lg">R$ {valorTotal.toFixed(2)}</p>
+                          <p className="text-orange-300 text-sm">Restante</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mb-4">
+                      <div className="flex gap-2 mb-4">
+                        <button
+                          onClick={() => setSubModoParcial("valor")}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            subModoParcial === "valor"
+                              ? "bg-blue-500/20 border border-blue-400/50 text-blue-400"
+                              : "bg-white/5 border border-white/20 text-white hover:bg-white/10"
+                          }`}
                         >
-                          <div className="flex-1">
-                            <p className="text-white font-medium">{item.produtoNome}</p>
-                            <p className="text-white/60 text-sm">R$ {item.precoUnitario.toFixed(2)} cada</p>
-                            <p className="text-white/60 text-sm">Disponível: {item.quantidadeRestante}</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleQuantidadeChange(item.pedidoId, item.quantidadePaga - 1)}
-                                className="w-8 h-8 bg-red-500/20 border border-red-400/50 rounded text-red-400 flex items-center justify-center hover:bg-red-500/30"
-                              >
-                                <Minus className="w-4 h-4" />
-                              </button>
-                              <span className="text-white font-medium min-w-[30px] text-center">
-                                {item.quantidadePaga}
-                              </span>
-                              <button
-                                onClick={() => handleQuantidadeChange(item.pedidoId, item.quantidadePaga + 1)}
-                                className="w-8 h-8 bg-emerald-500/20 border border-emerald-400/50 rounded text-emerald-400 flex items-center justify-center hover:bg-emerald-500/30"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
+                          Por Valor
+                        </button>
+                        <button
+                          onClick={() => setSubModoParcial("itens")}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            subModoParcial === "itens"
+                              ? "bg-blue-500/20 border border-blue-400/50 text-blue-400"
+                              : "bg-white/5 border border-white/20 text-white hover:bg-white/10"
+                          }`}
+                        >
+                          Por Itens
+                        </button>
+                      </div>
+
+                      {subModoParcial === "valor" && (
+                        <div className="p-4 backdrop-blur-xl bg-blue-500/10 border border-blue-400/30 rounded-xl">
+                          <label className="block text-white font-medium mb-3">Valor que o cliente pagou</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorPagamentoParcial}
+                            onChange={(e) => setValorPagamentoParcial(e.target.value || "")}
+                            placeholder="Ex: 50.00"
+                            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
+                          />
+
+                          {valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0 && (
+                            <div className="mt-3 space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 bg-green-500/20 border border-green-400/30 rounded-lg text-center">
+                                  <p className="text-green-400 font-bold text-lg">R$ {valorPagamentoParcial}</p>
+                                  <p className="text-green-300 text-sm">Valor Pago</p>
+                                </div>
+                                <div className="p-3 bg-orange-500/20 border border-orange-400/30 rounded-lg text-center">
+                                  <p className="text-orange-400 font-bold text-lg">
+                                    R$ {calcularRestanteParcial().toFixed(2)}
+                                  </p>
+                                  <p className="text-orange-300 text-sm">Valor Restante</p>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-emerald-400 font-bold">
-                                R$ {(item.quantidadePaga * item.precoUnitario).toFixed(2)}
+                          )}
+                        </div>
+                      )}
+
+                      {subModoParcial === "itens" && (
+                        <div>
+                          <h4 className="text-white font-medium mb-3">Selecionar Itens para Pagamento</h4>
+                          <div className="space-y-3">
+                            {pedidosDaComandaSelecionada
+                              .filter((pedido) => {
+                                const itemPago = itensPagos.find(
+                                  (item) => item.produtoNome === (pedido.produto?.nome || "Produto não encontrado"),
+                                )
+                                return !itemPago || itemPago.quantidadePaga < pedido.quantidade
+                              })
+                              .map((pedido) => {
+                                const itemPago = itensPagos.find(
+                                  (item) => item.produtoNome === (pedido.produto?.nome || "Produto não encontrado"),
+                                )
+                                const quantidadeDisponivel = pedido.quantidade - (itemPago?.quantidadePaga || 0)
+                                const quantidadeSelecionada = itensSelecionados[pedido.id] || 0
+                                const subtotalItem = quantidadeSelecionada * (pedido.preco_unitario || 0)
+
+                                return (
+                                  <div
+                                    key={pedido.id}
+                                    className="p-4 backdrop-blur-xl bg-white/5 border border-white/10 rounded-xl"
+                                  >
+                                    <div className="flex justify-between items-start mb-3">
+                                      <div>
+                                        <p className="text-white font-medium">
+                                          {pedido.produto?.nome || "Produto não encontrado"}
+                                        </p>
+                                        <p className="text-white/60 text-sm">
+                                          R$ {(pedido.preco_unitario || 0).toFixed(2)} cada • {quantidadeDisponivel}{" "}
+                                          disponível
+                                        </p>
+                                        {pedido.observacoes && (
+                                          <p className="text-yellow-400 text-sm">Obs: {pedido.observacoes}</p>
+                                        )}
+                                      </div>
+                                      <p className="text-emerald-400 font-bold">R$ {subtotalItem.toFixed(2)}</p>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          onClick={() => handleItemSelection(pedido.id, quantidadeSelecionada - 1)}
+                                          disabled={quantidadeSelecionada <= 0}
+                                          className="w-8 h-8 bg-red-500/20 border border-red-400/50 rounded text-red-400 flex items-center justify-center hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <Minus className="w-4 h-4" />
+                                        </button>
+                                        <span className="text-white font-medium min-w-[30px] text-center">
+                                          {quantidadeSelecionada}
+                                        </span>
+                                        <button
+                                          onClick={() => handleItemSelection(pedido.id, quantidadeSelecionada + 1)}
+                                          disabled={quantidadeSelecionada >= quantidadeDisponivel}
+                                          className="w-8 h-8 bg-emerald-500/20 border border-emerald-400/50 rounded text-emerald-400 flex items-center justify-center hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <Plus className="w-4 h-4" />
+                                        </button>
+                                      </div>
+
+                                      <button
+                                        onClick={() => handleItemSelection(pedido.id, quantidadeDisponivel)}
+                                        className="px-3 py-1 bg-blue-500/20 border border-blue-400/50 rounded text-blue-400 text-sm hover:bg-blue-500/30"
+                                      >
+                                        Selecionar Todos
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                          </div>
+
+                          {Object.keys(itensSelecionados).some((key) => itensSelecionados[key] > 0) && (
+                            <div className="mt-4 p-4 bg-blue-500/10 border border-blue-400/30 rounded-xl">
+                              <p className="text-white text-center">
+                                <span className="text-blue-400 font-bold text-xl">
+                                  R$ {calcularTotalItensSelecionados().toFixed(2)}
+                                </span>
+                                <br />
+                                <span className="text-white/70 text-sm">Total dos itens selecionados</span>
                               </p>
                             </div>
-                          </div>
+                          )}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 )}
@@ -609,7 +771,11 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                     <span className="text-white">
                       R${" "}
                       {(modoPagamento === "parcial"
-                        ? itensPagamento.reduce((total, item) => total + item.quantidadePaga * item.precoUnitario, 0)
+                        ? subModoParcial === "valor"
+                          ? valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0
+                            ? Number.parseFloat(valorPagamentoParcial)
+                            : 0
+                          : calcularTotalItensSelecionados()
                         : valorTotal
                       ).toFixed(2)}
                     </span>
@@ -632,10 +798,11 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       R${" "}
                       {(modoPagamento === "parcial"
                         ? incluirTaxaServico
-                          ? itensPagamento.reduce(
-                              (total, item) => total + item.quantidadePaga * item.precoUnitario,
-                              0,
-                            ) * 0.1
+                          ? subModoParcial === "valor"
+                            ? valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0
+                              ? Number.parseFloat(valorPagamentoParcial) * 0.1
+                              : 0
+                            : calcularTotalItensSelecionados() * 0.1
                           : 0
                         : taxaServico
                       ).toFixed(2)}
@@ -651,7 +818,13 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       {(modoPagamento === "dividir"
                         ? calcularDivisaoConta()
                         : modoPagamento === "parcial"
-                          ? calcularTotalParcial()
+                          ? subModoParcial === "valor"
+                            ? valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0
+                              ? Number.parseFloat(valorPagamentoParcial) +
+                                (incluirTaxaServico ? Number.parseFloat(valorPagamentoParcial) * 0.1 : 0)
+                              : 0
+                            : calcularTotalItensSelecionados() +
+                              (incluirTaxaServico ? calcularTotalItensSelecionados() * 0.1 : 0)
                           : totalFinal
                       ).toFixed(2)}
                     </span>
@@ -685,8 +858,20 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       type="number"
                       step="0.01"
                       value={valorPago}
-                      onChange={(e) => setValorPago(e.target.value || "")} // Ensure string value
-                      placeholder={`Mínimo: R$ ${(modoPagamento === "dividir" ? calcularDivisaoConta() : modoPagamento === "parcial" ? calcularTotalParcial() : totalFinal).toFixed(2)}`}
+                      onChange={(e) => setValorPago(e.target.value || "")}
+                      placeholder={`Mínimo: R$ ${(
+                        modoPagamento === "dividir"
+                          ? calcularDivisaoConta()
+                          : modoPagamento === "parcial"
+                            ? subModoParcial === "valor"
+                              ? valorPagamentoParcial && Number.parseFloat(valorPagamentoParcial) > 0
+                                ? Number.parseFloat(valorPagamentoParcial) +
+                                  (incluirTaxaServico ? Number.parseFloat(valorPagamentoParcial) * 0.1 : 0)
+                                : 0
+                              : calcularTotalItensSelecionados() +
+                                (incluirTaxaServico ? calcularTotalItensSelecionados() * 0.1 : 0)
+                            : totalFinal
+                      ).toFixed(2)}`}
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
                     />
                     {valorPago && Number.parseFloat(valorPago) > 0 && (
@@ -711,7 +896,14 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
                 <button
                   onClick={handleFecharConta}
-                  disabled={!metodoPagamento || processando || (metodoPagamento === "dinheiro" && calcularTroco() < 0)}
+                  disabled={
+                    !metodoPagamento ||
+                    processando ||
+                    (metodoPagamento === "dinheiro" && calcularTroco() < 0) ||
+                    (modoPagamento === "parcial" &&
+                      subModoParcial === "itens" &&
+                      calcularTotalItensSelecionados() === 0)
+                  }
                   className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {processando ? (
@@ -719,6 +911,8 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       Processando...
                     </>
+                  ) : modoPagamento === "parcial" ? (
+                    "Pagar Conta"
                   ) : (
                     "Fechar Conta"
                   )}

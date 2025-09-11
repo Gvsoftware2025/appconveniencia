@@ -36,6 +36,8 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     getPedidosByComanda,
     calcularTotalComanda,
     criarComanda: criarComandaContext,
+    removerItemPedido,
+    excluirComanda,
   } = usePedidos()
   const toast = useToast()
 
@@ -50,10 +52,16 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
   const [comandaParaPagamento, setComandaParaPagamento] = useState<any>(null)
   const [mostrarPagamento, setMostrarPagamento] = useState(false)
   const [pedidosExistentes, setPedidosExistentes] = useState<any[]>([])
+  const [mostrarSenhaModal, setMostrarSenhaModal] = useState(false)
+  const [senhaInput, setSenhaInput] = useState("")
+  const [comandaParaSenha, setComandaParaSenha] = useState<any>(null)
+  const [senhaError, setSenhaError] = useState("")
 
   const handleOrderReady = useCallback(
     (event: CustomEvent) => {
-      const { mesaNome, itemName } = event.detail
+      const { mesaNome, itemName, timestamp } = event.detail
+
+      console.log("[v0] Garcom: Received orderReady event:", { mesaNome, itemName, timestamp })
 
       toast({
         title: "🍽️ Pedido Pronto!",
@@ -61,9 +69,22 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
         duration: 5000,
       })
 
-      // Vibrate if supported
       if (typeof navigator !== "undefined" && "vibrate" in navigator) {
         navigator.vibrate([300, 100, 300, 100, 300])
+      }
+
+      if (typeof window !== "undefined") {
+        try {
+          const audio = new Audio(
+            "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT",
+          )
+          audio.volume = 0.5
+          audio.play().catch(() => {
+            console.log("[v0] Garcom: Audio notification failed, using vibration only")
+          })
+        } catch (error) {
+          console.log("[v0] Garcom: Audio creation failed:", error)
+        }
       }
     },
     [toast],
@@ -80,8 +101,19 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
   }, [products, comandas, pedidos, isLoading])
 
   useEffect(() => {
-    window.addEventListener("orderReady", handleOrderReady as EventListener)
-    return () => window.removeEventListener("orderReady", handleOrderReady as EventListener)
+    console.log("[v0] Garcom: Setting up orderReady event listener")
+
+    const eventListener = (event: Event) => {
+      console.log("[v0] Garcom: OrderReady event received, calling handler")
+      handleOrderReady(event as CustomEvent)
+    }
+
+    window.addEventListener("orderReady", eventListener)
+
+    return () => {
+      console.log("[v0] Garcom: Removing orderReady event listener")
+      window.removeEventListener("orderReady", eventListener)
+    }
   }, [handleOrderReady])
 
   const handleCriarNovaComanda = () => {
@@ -249,23 +281,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     })
 
   const isPorcao = (produto: Produto) => {
-    const nome = produto.nome?.toLowerCase() || ""
-    const descricao = produto.descricao?.toLowerCase() || ""
-
-    return (
-      nome.includes("batata") ||
-      nome.includes("frango") ||
-      nome.includes("porção") ||
-      nome.includes("petisco") ||
-      nome.includes("aperitivo") ||
-      nome.includes("mandioca") ||
-      nome.includes("calabresa") ||
-      nome.includes("linguiça") ||
-      nome.includes("pastéis") ||
-      descricao.includes("porção") ||
-      descricao.includes("petisco") ||
-      descricao.includes("aperitivo")
-    )
+    return getCategoriaFromProduct(produto) === "porcoes"
   }
 
   const getOriginalComandaName = (numeroComanda: string) => {
@@ -273,6 +289,183 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
       return numeroComanda.replace(/-\d+$/, "")
     }
     return numeroComanda
+  }
+
+  const handleRemoverItemExistente = async (pedidoId: string) => {
+    try {
+      await removerItemPedido(pedidoId)
+      await refreshData()
+
+      // Update existing orders list
+      if (comandaSelecionada) {
+        const pedidosAtualizados = getPedidosByComanda(comandaSelecionada.id)
+        setPedidosExistentes(pedidosAtualizados)
+      }
+
+      toast.success("Item removido com sucesso!")
+    } catch (error) {
+      console.error("[v0] Erro ao remover item:", error)
+      toast.error("Erro ao remover item. Tente novamente.")
+    }
+  }
+
+  const handleExcluirComanda = async (comandaId: string) => {
+    const confirmed = await showModernConfirmDialog()
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await excluirComanda(comandaId)
+      await refreshData()
+      toast.success("✅ Comanda excluída com sucesso!")
+
+      // If we're currently editing this comanda, go back to main screen
+      if (comandaSelecionada?.id === comandaId) {
+        setTelaAtual("principal")
+        setComandaSelecionada(null)
+        setNomeComanda("")
+        setProdutosSelecionados({})
+        setObservacoesProdutos({})
+        setPedidosExistentes([])
+      }
+    } catch (error) {
+      console.error("[v0] Erro ao excluir comanda:", error)
+      toast.error("❌ Erro ao excluir comanda. Tente novamente.")
+    }
+  }
+
+  const showModernConfirmDialog = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("div")
+      dialog.className = "fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+
+      dialog.innerHTML = `
+        <div class="bg-slate-900/95 backdrop-blur-xl border border-red-500/30 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="p-3 bg-red-500/20 rounded-xl">
+              <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-xl font-bold text-white">Excluir Comanda</h3>
+              <p class="text-red-400 text-sm font-medium bg-red-400/20 px-2 py-1 rounded-full">
+                ATIVA
+              </p>
+            </div>
+          </div>
+          
+          <div class="mb-6">
+            <p class="text-gray-300 mb-4">Tem certeza que deseja excluir esta comanda?</p>
+            
+            <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-2">
+              <div class="flex items-center gap-2 text-sm text-red-300">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path>
+                </svg>
+                <span>Todos os pedidos serão removidos</span>
+              </div>
+              <div class="flex items-center gap-2 text-sm text-red-300">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path>
+                </svg>
+                <span>Esta ação não pode ser desfeita</span>
+              </div>
+              <div class="flex items-center gap-2 text-sm text-red-300">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path>
+                </svg>
+                <span>Os dados serão perdidos permanentemente</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="flex gap-3">
+            <button id="cancelBtn" class="flex-1 px-4 py-3 bg-gray-500/20 hover:bg-gray-500/30 text-gray-300 rounded-lg font-medium transition-all duration-200 border border-gray-500/30">
+              Cancelar
+            </button>
+            <button id="confirmBtn" class="flex-1 px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg">
+              Excluir Comanda
+            </button>
+          </div>
+        </div>
+      `
+
+      document.body.appendChild(dialog)
+
+      const cancelBtn = dialog.querySelector("#cancelBtn")
+      const confirmBtn = dialog.querySelector("#confirmBtn")
+
+      const cleanup = () => {
+        dialog.remove()
+      }
+
+      cancelBtn?.addEventListener("click", () => {
+        cleanup()
+        resolve(false)
+      })
+
+      confirmBtn?.addEventListener("click", () => {
+        cleanup()
+        resolve(true)
+      })
+
+      // Close on backdrop click
+      dialog.addEventListener("click", (e) => {
+        if (e.target === dialog) {
+          cleanup()
+          resolve(false)
+        }
+      })
+
+      // Close on Escape key
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          cleanup()
+          resolve(false)
+          document.removeEventListener("keydown", handleEscape)
+        }
+      }
+      document.addEventListener("keydown", handleEscape)
+    })
+  }
+
+  const handleFecharConta = async (comanda: any) => {
+    console.log("[v0] handleFecharConta called for comanda:", comanda.numero_comanda)
+    console.log("[v0] Current telaAtual:", telaAtual)
+    console.log("[v0] Current mostrarSenhaModal:", mostrarSenhaModal)
+
+    setComandaParaSenha(comanda)
+    setSenhaInput("")
+    setSenhaError("")
+    setMostrarSenhaModal(true)
+
+    console.log("[v0] After setting mostrarSenhaModal to true")
+  }
+
+  const handleConfirmarSenha = () => {
+    const customPassword = localStorage.getItem("custom_payment-password")
+    const expectedPassword = customPassword || "CRivesAdmin@2025"
+
+    if (senhaInput !== expectedPassword) {
+      setSenhaError("Senha incorreta!")
+      return
+    }
+
+    setMostrarSenhaModal(false)
+    setComandaParaPagamento(comandaParaSenha)
+    setMostrarPagamento(true)
+    setSenhaInput("")
+    setSenhaError("")
+  }
+
+  const handleCancelarSenha = () => {
+    setMostrarSenhaModal(false)
+    setSenhaInput("")
+    setSenhaError("")
+    setComandaParaSenha(null)
   }
 
   if (mostrarPagamento && comandaParaPagamento) {
@@ -283,6 +476,62 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
       <div className="absolute inset-0 bg-[url('/restaurant-interior.png')] bg-cover bg-center opacity-10" />
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900/90 via-purple-900/90 to-slate-900/90" />
+
+      {mostrarSenhaModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-slate-900/95 backdrop-blur-xl border border-blue-500/30 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
+                Acesso ao Pagamento {console.log("[v0] Password modal is rendering")}
+              </h2>
+              <button onClick={handleCancelarSenha} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-6 h-6 text-white" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white font-medium mb-2">Senha do Sistema de Pagamento</label>
+                <input
+                  type="password"
+                  placeholder="Digite a senha..."
+                  value={senhaInput}
+                  onChange={(e) => setSenhaInput(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  autoFocus
+                />
+                {senhaError && <p className="text-red-400 text-sm mt-2">{senhaError}</p>}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCancelarSenha}
+                  className="flex-1 px-4 py-3 bg-gray-500/20 text-white rounded-lg hover:bg-gray-500/30 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmarSenha}
+                  disabled={!senhaInput || !senhaInput.trim()}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-600 hover:to-teal-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Acessar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
 
       <div className="relative z-10 flex items-center justify-between p-4 backdrop-blur-xl bg-white/10 border-b border-white/20">
         <button
@@ -427,10 +676,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                           Editar Pedido
                         </button>
                         <button
-                          onClick={() => {
-                            setComandaParaPagamento(comanda)
-                            setMostrarPagamento(true)
-                          }}
+                          onClick={() => handleFecharConta(comanda)}
                           className="flex-1 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                         >
                           Fechar Conta
@@ -459,7 +705,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
-                  Nova Comanda
+                  Nova Comanda {console.log("[v0] Nova Comanda modal is rendering")}
                 </h2>
                 <button
                   onClick={() => setTelaAtual("principal")}
@@ -528,7 +774,163 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-3">
+                <div className="lg:col-span-1 lg:order-1">
+                  <div className="sticky top-6 space-y-4">
+                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
+                      <h4 className="font-semibold text-white mb-3">📋 Resumo do Pedido</h4>
+
+                      {Object.keys(produtosSelecionados).length > 0 && (
+                        <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-400/30 rounded-lg">
+                          <h5 className="text-emerald-400 font-medium mb-2">🛒 Novos itens selecionados:</h5>
+                          <div className="space-y-2">
+                            {Object.entries(produtosSelecionados).map(([produtoId, quantidade]) => {
+                              const produto = products.find((p) => p.id === produtoId)
+                              if (!produto) return null
+                              return (
+                                <div
+                                  key={produtoId}
+                                  className="flex items-center justify-between text-sm bg-white/5 p-2 rounded-lg"
+                                >
+                                  <div className="flex-1">
+                                    <span className="text-white block">
+                                      {produto.nome} x{quantidade}
+                                    </span>
+                                    <span className="text-emerald-400 text-xs">
+                                      R$ {(produto.preco * quantidade).toFixed(2)}
+                                    </span>
+                                    {observacoesProdutos[produtoId] && (
+                                      <span className="text-yellow-400 text-xs block">
+                                        Obs: {observacoesProdutos[produtoId]}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoverSelecao(produtoId)}
+                                    className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+                                    title="Remover item"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {pedidosExistentes.length > 0 && (
+                        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-400/30 rounded-lg">
+                          <h5 className="text-blue-400 font-medium mb-2">🍽️ Itens já pedidos pelos clientes:</h5>
+                          <div className="space-y-2">
+                            {pedidosExistentes.map((pedido, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center justify-between text-sm bg-white/5 p-2 rounded-lg"
+                              >
+                                <div className="flex-1">
+                                  <span className="text-white block">
+                                    {pedido.produto?.nome} x{pedido.quantidade}
+                                  </span>
+                                  <span className="text-green-400 text-xs">
+                                    R$ {(pedido.produto?.preco * pedido.quantidade).toFixed(2)}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => handleRemoverItemExistente(pedido.id)}
+                                  className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+                                  title="Excluir item"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-blue-400/20">
+                            <div className="flex justify-between text-sm font-medium">
+                              <span className="text-blue-400">Total já pedido:</span>
+                              <span className="text-green-400">
+                                R${" "}
+                                {pedidosExistentes
+                                  .reduce((total, pedido) => total + pedido.produto?.preco * pedido.quantidade, 0)
+                                  .toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2 text-sm">
+                        <p className="text-gray-300">
+                          Comanda: <span className="text-white font-medium">{getOriginalComandaName(nomeComanda)}</span>
+                        </p>
+                        <p className="text-gray-300">
+                          Novos itens selecionados:{" "}
+                          <span className="text-emerald-400 font-semibold">
+                            {Object.values(produtosSelecionados).reduce((sum, qty) => sum + qty, 0)}
+                          </span>
+                        </p>
+                        <p className="text-gray-300">
+                          Total novos itens:{" "}
+                          <span className="text-emerald-400 font-semibold">
+                            R${" "}
+                            {Object.entries(produtosSelecionados)
+                              .reduce((total, [produtoId, quantidade]) => {
+                                const produto = products.find((p) => p.id === produtoId)
+                                return total + (produto?.preco || 0) * quantidade
+                              }, 0)
+                              .toFixed(2)}
+                          </span>
+                        </p>
+                        {pedidosExistentes.length > 0 && (
+                          <div className="pt-2 border-t border-white/20">
+                            <p className="text-gray-300">
+                              <strong>Total geral da mesa:</strong>{" "}
+                              <span className="text-green-400 font-bold text-lg">
+                                R${" "}
+                                {(
+                                  pedidosExistentes.reduce(
+                                    (total, pedido) => total + pedido.produto?.preco * pedido.quantidade,
+                                    0,
+                                  ) +
+                                  Object.entries(produtosSelecionados).reduce((total, [produtoId, quantidade]) => {
+                                    const produto = products.find((p) => p.id === produtoId)
+                                    return total + (produto?.preco || 0) * quantidade
+                                  }, 0)
+                                ).toFixed(2)}
+                              </span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => setTelaAtual("principal")}
+                        className="w-full bg-gray-500/20 hover:bg-gray-500/30 text-white py-3 rounded-lg font-medium transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleFinalizarPedido}
+                        disabled={Object.keys(produtosSelecionados).length === 0 || isLoadingFinalizarPedido}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isLoadingFinalizarPedido ? "Finalizando..." : "Finalizar Pedido"}
+                      </button>
+                      {comandaSelecionada && (
+                        <button
+                          onClick={() => handleExcluirComanda(comandaSelecionada.id)}
+                          className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 py-3 rounded-lg font-medium transition-colors border border-red-500/30"
+                        >
+                          🗑️ Excluir Comanda
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3 lg:order-2">
                   <div className="mb-4">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                       <h3 className="text-lg font-semibold text-white">🛒 Produtos Disponíveis</h3>
@@ -646,102 +1048,6 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                           </div>
                         </motion.div>
                       ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="lg:col-span-1">
-                  <div className="sticky top-6 space-y-4">
-                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-                      <h4 className="font-semibold text-white mb-3">📋 Resumo do Pedido</h4>
-                      {pedidosExistentes.length > 0 && (
-                        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-400/30 rounded-lg">
-                          <h5 className="text-blue-400 font-medium mb-2">🍽️ Itens já pedidos pelos clientes:</h5>
-                          <div className="space-y-2">
-                            {pedidosExistentes.map((pedido, index) => (
-                              <div key={index} className="flex justify-between text-sm">
-                                <span className="text-white">
-                                  {pedido.produto?.nome} x{pedido.quantidade}
-                                </span>
-                                <span className="text-green-400">
-                                  R$ {(pedido.produto?.preco * pedido.quantidade).toFixed(2)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="mt-2 pt-2 border-t border-blue-400/20">
-                            <div className="flex justify-between text-sm font-medium">
-                              <span className="text-blue-400">Total já pedido:</span>
-                              <span className="text-green-400">
-                                R${" "}
-                                {pedidosExistentes
-                                  .reduce((total, pedido) => total + pedido.produto?.preco * pedido.quantidade, 0)
-                                  .toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-2 text-sm">
-                        <p className="text-gray-300">
-                          Comanda: <span className="text-white font-medium">{getOriginalComandaName(nomeComanda)}</span>
-                        </p>
-                        <p className="text-gray-300">
-                          Novos itens selecionados:{" "}
-                          <span className="text-emerald-400 font-semibold">
-                            {Object.values(produtosSelecionados).reduce((sum, qty) => sum + qty, 0)}
-                          </span>
-                        </p>
-                        <p className="text-gray-300">
-                          Total novos itens:{" "}
-                          <span className="text-emerald-400 font-semibold">
-                            R${" "}
-                            {Object.entries(produtosSelecionados)
-                              .reduce((total, [produtoId, quantidade]) => {
-                                const produto = products.find((p) => p.id === produtoId)
-                                return total + (produto?.preco || 0) * quantidade
-                              }, 0)
-                              .toFixed(2)}
-                          </span>
-                        </p>
-                        {pedidosExistentes.length > 0 && (
-                          <div className="pt-2 border-t border-white/20">
-                            <p className="text-gray-300">
-                              <strong>Total geral da mesa:</strong>{" "}
-                              <span className="text-green-400 font-bold text-lg">
-                                R${" "}
-                                {(
-                                  pedidosExistentes.reduce(
-                                    (total, pedido) => total + pedido.produto?.preco * pedido.quantidade,
-                                    0,
-                                  ) +
-                                  Object.entries(produtosSelecionados).reduce((total, [produtoId, quantidade]) => {
-                                    const produto = products.find((p) => p.id === produtoId)
-                                    return total + (produto?.preco || 0) * quantidade
-                                  }, 0)
-                                ).toFixed(2)}
-                              </span>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <button
-                        onClick={() => setTelaAtual("principal")}
-                        className="w-full bg-gray-500/20 hover:bg-gray-500/30 text-white py-3 rounded-lg font-medium transition-colors"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={handleFinalizarPedido}
-                        disabled={Object.keys(produtosSelecionados).length === 0 || isLoadingFinalizarPedido}
-                        className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoadingFinalizarPedido ? "Finalizando..." : "Finalizar Pedido"}
-                      </button>
                     </div>
                   </div>
                 </div>

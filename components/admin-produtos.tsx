@@ -223,7 +223,7 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
       <div className="relative z-10 flex items-center justify-between p-4 backdrop-blur-xl bg-white/10 border-b border-white/20">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-all duration-200"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-700/60 hover:bg-slate-700/80 rounded-lg border border-white/20 transition-all duration-200"
         >
           <ArrowLeft className="w-4 h-4 text-white" />
           <span className="text-white font-medium">Voltar</span>
@@ -471,7 +471,7 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+                      className="flex-1 px-4 py-2 bg-slate-700/60 text-white rounded-lg hover:bg-slate-700/80 transition-colors"
                     >
                       Cancelar
                     </button>

@@ -2,7 +2,7 @@
 import { usePedidos } from "@/contexts/pedidos-context"
 import { ArrowLeft, CheckCircle, Play, Printer, Clock, ChefHat } from "lucide-react"
 import Image from "next/image"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 
 interface CozinhaInterfaceProps {
@@ -12,6 +12,7 @@ interface CozinhaInterfaceProps {
 export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
   const { pedidos, comandas, refreshData, updatePedidoStatus } = usePedidos()
   const { toast } = useToast()
+  const [previousPedidosCount, setPreviousPedidosCount] = useState(0)
 
   useEffect(() => {
     // Initial data refresh when component mounts
@@ -29,6 +30,45 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
     return () => clearInterval(interval)
   }, [refreshData])
 
+  useEffect(() => {
+    if (pedidos && pedidos.length > 0) {
+      const currentCount = pedidos.length
+
+      if (previousPedidosCount > 0 && currentCount > previousPedidosCount) {
+        const newOrdersCount = currentCount - previousPedidosCount
+
+        toast({
+          title: "🔔 Novo Pedido!",
+          description: `${newOrdersCount} novo${newOrdersCount > 1 ? "s" : ""} pedido${newOrdersCount > 1 ? "s" : ""} chegou${newOrdersCount > 1 ? "ram" : ""}`,
+          duration: 5000,
+        })
+
+        // Play notification sound
+        if (typeof window !== "undefined") {
+          try {
+            const audio = new Audio(
+              "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT",
+            )
+            audio.volume = 0.3
+            audio.play().catch(() => {
+              // Fallback to vibration if audio fails
+              if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+                navigator.vibrate([200, 100, 200, 100, 200])
+              }
+            })
+          } catch (error) {
+            // Fallback to vibration if audio creation fails
+            if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+              navigator.vibrate([200, 100, 200, 100, 200])
+            }
+          }
+        }
+      }
+
+      setPreviousPedidosCount(currentCount)
+    }
+  }, [pedidos, previousPedidosCount, toast])
+
   const handleStatusUpdate = async (pedidoId: string, newStatus: "preparando" | "pronto") => {
     try {
       await updatePedidoStatus(pedidoId, newStatus)
@@ -36,7 +76,7 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
       if (newStatus === "pronto") {
         const pedido = pedidos.find((p) => p.id === pedidoId)
         const comanda = comandas?.find((c) => c.id === pedido?.comanda_id)
-        const mesaNome = comanda?.mesas?.[0] ? `Mesa ${comanda.mesas[0].numero}` : "Mesa"
+        const mesaNome = comanda?.numero_comanda || "Mesa"
 
         toast({
           title: "✅ Pedido Finalizado!",
@@ -45,15 +85,24 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
         })
 
         if (typeof window !== "undefined") {
+          const eventDetail = {
+            mesaNome,
+            itemName: pedido?.produto?.nome || "Item",
+            pedidoId,
+            timestamp: new Date().toISOString(),
+          }
+
           const event = new CustomEvent("orderReady", {
-            detail: {
-              mesaNome,
-              itemName: pedido?.produto?.nome || "Item",
-              pedidoId,
-            },
+            detail: eventDetail,
           })
-          console.log("[v0] Dispatching orderReady event from kitchen:", { mesaNome, itemName: pedido?.produto?.nome })
+
+          console.log("[v0] Kitchen: Dispatching orderReady event:", eventDetail)
           window.dispatchEvent(event)
+
+          // Verify event was dispatched
+          setTimeout(() => {
+            console.log("[v0] Kitchen: OrderReady event dispatched successfully")
+          }, 100)
         }
 
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -467,7 +516,7 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
         <header className="flex items-center justify-between p-6 backdrop-blur-xl bg-white/5 border-b border-white/10 shadow-2xl">
           <button
             onClick={onBack}
-            className="flex items-center gap-3 px-6 py-3 backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl text-white hover:bg-white/20 transition-all duration-300 shadow-lg hover:shadow-xl"
+            className="flex items-center gap-3 px-6 py-3 backdrop-blur-xl bg-slate-700/60 border border-white/20 rounded-2xl text-white hover:bg-slate-700/80 transition-all duration-300 shadow-lg hover:shadow-xl"
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="font-medium">Voltar</span>
@@ -552,7 +601,7 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
                     </h3>
                     <button
                       onClick={() => handlePrintReceipt(displayName, pedidosDaComanda)}
-                      className="flex items-center gap-2 px-4 py-2 backdrop-blur-xl bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-all duration-300"
+                      className="flex items-center gap-2 px-4 py-2 backdrop-blur-xl bg-slate-700/60 border border-white/20 rounded-xl text-white hover:bg-slate-700/80 transition-all duration-300"
                       title="Imprimir Comprovante"
                     >
                       <Printer className="w-4 h-4" />
@@ -562,6 +611,10 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
 
                   {hasPendingItems && (
                     <div className="mb-6">
+                      {console.log(
+                        `[v0] Comanda ${comandaNome} - hasPendingItems: ${hasPendingItems}, pedidos:`,
+                        pedidosDaComanda.map((p) => ({ nome: p.produto?.nome, status: p.status })),
+                      )}
                       <button
                         onClick={() => handleStartAllPreparation(pedidosDaComanda)}
                         className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 border border-blue-400/30 rounded-2xl text-white font-bold text-lg transition-all duration-200 hover:scale-105 shadow-lg"
@@ -573,6 +626,10 @@ export default function CozinhaInterface({ onBack }: CozinhaInterfaceProps) {
 
                   {hasPreparingItems && !hasPendingItems && (
                     <div className="mb-6">
+                      {console.log(
+                        `[v0] Comanda ${comandaNome} - hasPreparingItems: ${hasPreparingItems}, hasPendingItems: ${hasPendingItems}, pedidos:`,
+                        pedidosDaComanda.map((p) => ({ nome: p.produto?.nome, status: p.status })),
+                      )}
                       <button
                         onClick={() => handleMarkAllReady(pedidosDaComanda)}
                         className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 border border-green-400/30 rounded-2xl text-white font-bold text-lg transition-all duration-200 hover:scale-105 shadow-lg"
