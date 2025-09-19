@@ -449,17 +449,15 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
 
     const totalDia = transacoesAcumuladas.reduce((sum, t) => sum + t.valor, 0)
     const totalTransacoes = transacoesAcumuladas.length
-    const dataFechamento = new Date().toLocaleDateString("pt-BR")
-    const horaFechamento = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
 
-    const confirmMessage = `🏪 FECHAMENTO DE CAIXA\n\n📊 RESUMO DO PERÍODO:\n• Total de Vendas: R$ ${totalDia.toFixed(2)}\n• Transações: ${totalTransacoes}\n• Data: ${dataFechamento}\n• Horário: ${horaFechamento}\n\n⚠️ ATENÇÃO:\n• Um relatório PDF será gerado automaticamente\n• Todo o histórico será limpo após o fechamento\n• Esta ação não pode ser desfeita\n\n✅ Confirma o fechamento do caixa?`
+    const confirmMessage = `💰 Fechar Caixa\n\nTotal: R$ ${totalDia.toFixed(2)} (${totalTransacoes} transações)\n\nConfirmar fechamento?`
 
     if (!confirm(confirmMessage)) {
       return
     }
 
     try {
-      toast.info("🔄 Processando fechamento do caixa...", "Gerando relatório PDF...")
+      toast.info("🔄 Fechando caixa...")
 
       // Generate PDF report first
       gerarRelatorioPDF()
@@ -467,8 +465,8 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
       // Save daily total to localStorage for historical records
       const historicoCaixa = JSON.parse(localStorage.getItem("historico_caixa") || "[]")
       historicoCaixa.push({
-        data: dataFechamento,
-        hora: horaFechamento,
+        data: new Date().toLocaleDateString("pt-BR"),
+        hora: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         total: totalDia,
         transacoes: transacoesAcumuladas.length,
         fechamento: new Date().toISOString(),
@@ -479,30 +477,15 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
       setTransacoesAcumuladas([])
       localStorage.removeItem("transacoes_acumuladas")
 
-      const successMessage = `✅ CAIXA FECHADO COM SUCESSO!\n\n💰 RESUMO FINAL:\n• Faturamento Total: R$ ${totalDia.toFixed(2)}\n• Total de Transações: ${totalTransacoes}\n• Ticket Médio: R$ ${totalTransacoes > 0 ? (totalDia / totalTransacoes).toFixed(2) : "0.00"}\n• Data/Hora: ${dataFechamento} às ${horaFechamento}\n\n📄 RELATÓRIO:\n• PDF gerado e baixado automaticamente\n• Dados salvos no histórico do sistema\n• Transações do período foram arquivadas\n\n🔄 PRÓXIMOS PASSOS:\n• O sistema está pronto para um novo período\n• Histórico foi limpo para novas transações\n• Relatório PDF disponível para impressão`
+      const successMessage = `✅ Caixa fechado com sucesso!\n\nR$ ${totalDia.toFixed(2)} • ${totalTransacoes} transações\nRelatório PDF gerado automaticamente`
 
       alert(successMessage)
 
-      toast.success("🎉 Caixa fechado com sucesso!", {
-        autoClose: 5000,
-        hideProgressBar: false,
-      })
-
-      setTimeout(() => {
-        toast.info(`💼 Período encerrado: R$ ${totalDia.toFixed(2)} em ${totalTransacoes} transações`, {
-          autoClose: 4000,
-        })
-      }, 1000)
+      toast.success("🎉 Caixa fechado com sucesso!")
     } catch (error) {
       console.error("Erro ao fechar caixa:", error)
-      toast.error(
-        "❌ Erro ao processar fechamento",
-        "Verifique sua conexão e tente novamente. Se o problema persistir, contate o suporte técnico.",
-      )
-
-      alert(
-        `❌ ERRO NO FECHAMENTO DO CAIXA\n\nDetalhes do erro:\n• Não foi possível completar o fechamento\n• Dados não foram perdidos\n• Tente novamente em alguns instantes\n\n🔧 Se o problema persistir:\n• Verifique sua conexão com a internet\n• Reinicie o navegador\n• Contate o suporte técnico`,
-      )
+      toast.error("❌ Erro ao fechar caixa. Tente novamente.")
+      alert("❌ Erro no fechamento\n\nTente novamente em alguns instantes.")
     }
   }
 
