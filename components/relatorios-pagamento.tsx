@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { ArrowLeft, TrendingUp, DollarSign, CreditCard, Calendar, Download, Filter, Eye, Trash2 } from "lucide-react"
+import { ArrowLeft, TrendingUp, DollarSign, CreditCard, Calendar, Download, Filter, Eye, FileText } from "lucide-react"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import { usePedidos } from "@/contexts/pedidos-context"
@@ -31,12 +31,24 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
   const [filtroMetodo, setFiltroMetodo] = useState("todos")
   const [transacaoSelecionada, setTransacaoSelecionada] = useState<TransacaoPagamento | null>(null)
 
-  const [transacoes, setTransacoes] = useState<TransacaoPagamento[]>([])
+  const [transacoesAcumuladas, setTransacoesAcumuladas] = useState<TransacaoPagamento[]>([])
 
-  const gerarTransacoesReais = useMemo(() => {
-    if (!comandas || !pedidos) return []
+  // Load accumulated transactions from localStorage on component mount
+  useEffect(() => {
+    const transacoesSalvas = localStorage.getItem("transacoes_acumuladas")
+    if (transacoesSalvas) {
+      const transacoes = JSON.parse(transacoesSalvas).map((t: any) => ({
+        ...t,
+        data: new Date(t.data),
+      }))
+      setTransacoesAcumuladas(transacoes)
+    }
+  }, [])
 
-    return comandas
+  useEffect(() => {
+    if (!comandas || !pedidos) return
+
+    const novasTransacoes = comandas
       .filter((comanda) => comanda.status === "fechada" || comanda.total > 0)
       .map((comanda) => {
         const pedidosDaComanda = pedidos.filter((p) => p.comanda_id === comanda.id)
@@ -56,15 +68,27 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
           itens,
         } as TransacaoPagamento
       })
-      .sort((a, b) => b.data.getTime() - a.data.getTime())
+
+    // Merge new transactions with accumulated ones, avoiding duplicates
+    setTransacoesAcumuladas((prevTransacoes) => {
+      const todasTransacoes = [...prevTransacoes]
+      novasTransacoes.forEach((nova) => {
+        const existe = todasTransacoes.find((t) => t.id === nova.id)
+        if (!existe) {
+          todasTransacoes.push(nova)
+        }
+      })
+
+      // Save updated transactions to localStorage
+      const transacoesOrdenadas = todasTransacoes.sort((a, b) => b.data.getTime() - a.data.getTime())
+      localStorage.setItem("transacoes_acumuladas", JSON.stringify(transacoesOrdenadas))
+
+      return transacoesOrdenadas
+    })
   }, [comandas, pedidos, calcularTotalComanda])
 
-  useEffect(() => {
-    setTransacoes(gerarTransacoesReais)
-  }, [gerarTransacoesReais])
-
   const transacoesFiltradas = useMemo(() => {
-    let filtradas = [...transacoes]
+    let filtradas = [...transacoesAcumuladas]
 
     const agora = new Date()
     const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate())
@@ -95,7 +119,7 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
     }
 
     return filtradas.sort((a, b) => b.data.getTime() - a.data.getTime())
-  }, [transacoes, filtroData, filtroMetodo])
+  }, [transacoesAcumuladas, filtroData, filtroMetodo])
 
   const estatisticas = useMemo(() => {
     const total = transacoesFiltradas.reduce((sum, t) => sum + t.valor, 0)
@@ -217,44 +241,276 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
     window.URL.revokeObjectURL(url)
   }
 
-  const handleExcluirHistorico = () => {
-    if (confirm("Tem certeza que deseja excluir todo o histórico de transações? Esta ação não pode ser desfeita.")) {
-      setTransacoes([])
-      toast.success("Histórico excluído", "Todas as transações foram removidas do histórico.")
+  const gerarRelatorioPDF = () => {
+    if (transacoesAcumuladas.length === 0) {
+      toast.error("Não há dados para gerar o relatório PDF.")
+      return
     }
+
+    const dataAtual = new Date().toLocaleDateString("pt-BR")
+    const horaAtual = new Date().toLocaleTimeString("pt-BR")
+
+    // Calculate statistics
+    const totalGeral = transacoesAcumuladas.reduce((sum, t) => sum + t.valor, 0)
+    const totalTransacoes = transacoesAcumuladas.length
+    const ticketMedio = totalTransacoes > 0 ? totalGeral / totalTransacoes : 0
+
+    const porMetodo = transacoesAcumuladas.reduce(
+      (acc, t) => {
+        acc[t.metodoPagamento] = (acc[t.metodoPagamento] || 0) + t.valor
+        return acc
+      },
+      {} as Record<string, number>,
+    )
+
+    // Group by date
+    const porData = transacoesAcumuladas.reduce(
+      (acc, t) => {
+        const data = t.data.toLocaleDateString("pt-BR")
+        if (!acc[data]) {
+          acc[data] = { total: 0, transacoes: 0 }
+        }
+        acc[data].total += t.valor
+        acc[data].transacoes += 1
+        return acc
+      },
+      {} as Record<string, { total: number; transacoes: number }>,
+    )
+
+    // Create HTML content for PDF
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Relatório de Fechamento de Caixa</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+          .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+          .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+          .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; text-align: center; }
+          .summary-card h3 { margin: 0 0 10px 0; color: #666; font-size: 14px; }
+          .summary-card .value { font-size: 24px; font-weight: bold; color: #059669; }
+          .section { margin-bottom: 30px; }
+          .section h2 { border-bottom: 1px solid #ddd; padding-bottom: 10px; color: #333; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+          th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+          th { background-color: #f8f9fa; font-weight: bold; }
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          .total-row { font-weight: bold; background-color: #f0f9ff; }
+          .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">🏪 APP CONVENIÊNCIA</div>
+          <h1>Relatório de Fechamento de Caixa</h1>
+          <p>Gerado em: ${dataAtual} às ${horaAtual}</p>
+        </div>
+
+        <div class="summary">
+          <div class="summary-card">
+            <h3>FATURAMENTO TOTAL</h3>
+            <div class="value">R$ ${totalGeral.toFixed(2)}</div>
+          </div>
+          <div class="summary-card">
+            <h3>TOTAL DE TRANSAÇÕES</h3>
+            <div class="value">${totalTransacoes}</div>
+          </div>
+          <div class="summary-card">
+            <h3>TICKET MÉDIO</h3>
+            <div class="value">R$ ${ticketMedio.toFixed(2)}</div>
+          </div>
+          <div class="summary-card">
+            <h3>PERÍODO</h3>
+            <div class="value">${Object.keys(porData).length} dia(s)</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>📊 Resumo por Método de Pagamento</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Método de Pagamento</th>
+                <th class="text-right">Valor Total</th>
+                <th class="text-right">% do Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(porMetodo)
+                .map(
+                  ([metodo, valor]) => `
+                <tr>
+                  <td>${getMetodoPagamentoLabel(metodo)}</td>
+                  <td class="text-right">R$ ${valor.toFixed(2)}</td>
+                  <td class="text-right">${((valor / totalGeral) * 100).toFixed(1)}%</td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>📅 Resumo por Data</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th class="text-right">Transações</th>
+                <th class="text-right">Valor Total</th>
+                <th class="text-right">Ticket Médio</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(porData)
+                .map(
+                  ([data, info]) => `
+                <tr>
+                  <td>${data}</td>
+                  <td class="text-right">${info.transacoes}</td>
+                  <td class="text-right">R$ ${info.total.toFixed(2)}</td>
+                  <td class="text-right">R$ ${(info.total / info.transacoes).toFixed(2)}</td>
+                </tr>
+              `,
+                )
+                .join("")}
+              <tr class="total-row">
+                <td><strong>TOTAL GERAL</strong></td>
+                <td class="text-right"><strong>${totalTransacoes}</strong></td>
+                <td class="text-right"><strong>R$ ${totalGeral.toFixed(2)}</strong></td>
+                <td class="text-right"><strong>R$ ${ticketMedio.toFixed(2)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>📋 Detalhamento de Transações</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data/Hora</th>
+                <th>Comanda</th>
+                <th>Método</th>
+                <th class="text-right">Valor</th>
+                <th class="text-center">Itens</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${transacoesAcumuladas
+                .map(
+                  (t) => `
+                <tr>
+                  <td>${t.data.toLocaleString("pt-BR")}</td>
+                  <td>${t.comanda}</td>
+                  <td>${getMetodoPagamentoLabel(t.metodoPagamento)}</td>
+                  <td class="text-right">R$ ${t.valor.toFixed(2)}</td>
+                  <td class="text-center">${t.itens.length}</td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer">
+          <p>Relatório gerado automaticamente pelo Sistema APP Conveniência</p>
+          <p>Este documento comprova o fechamento do caixa do período especificado</p>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Create and download PDF
+    const blob = new Blob([htmlContent], { type: "text/html" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `relatorio-fechamento-caixa-${new Date().toISOString().split("T")[0]}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+
+    toast.success("Relatório PDF gerado com sucesso!")
   }
 
   const handleFecharCaixa = async () => {
-    if (!confirm("Tem certeza que deseja fechar o caixa? Isso salvará o total do dia e excluirá todo o histórico.")) {
+    if (transacoesAcumuladas.length === 0) {
+      toast.error("❌ Não há transações para fechar o caixa.")
+      return
+    }
+
+    const totalDia = transacoesAcumuladas.reduce((sum, t) => sum + t.valor, 0)
+    const totalTransacoes = transacoesAcumuladas.length
+    const dataFechamento = new Date().toLocaleDateString("pt-BR")
+    const horaFechamento = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+
+    const confirmMessage = `🏪 FECHAMENTO DE CAIXA\n\n📊 RESUMO DO PERÍODO:\n• Total de Vendas: R$ ${totalDia.toFixed(2)}\n• Transações: ${totalTransacoes}\n• Data: ${dataFechamento}\n• Horário: ${horaFechamento}\n\n⚠️ ATENÇÃO:\n• Um relatório PDF será gerado automaticamente\n• Todo o histórico será limpo após o fechamento\n• Esta ação não pode ser desfeita\n\n✅ Confirma o fechamento do caixa?`
+
+    if (!confirm(confirmMessage)) {
       return
     }
 
     try {
-      const totalDia = estatisticas.total
-      const dataFechamento = new Date().toLocaleDateString("pt-BR")
+      toast.info("🔄 Processando fechamento do caixa...", "Gerando relatório PDF...")
+
+      // Generate PDF report first
+      gerarRelatorioPDF()
 
       // Save daily total to localStorage for historical records
       const historicoCaixa = JSON.parse(localStorage.getItem("historico_caixa") || "[]")
       historicoCaixa.push({
         data: dataFechamento,
+        hora: horaFechamento,
         total: totalDia,
-        transacoes: transacoes.length,
+        transacoes: transacoesAcumuladas.length,
         fechamento: new Date().toISOString(),
       })
       localStorage.setItem("historico_caixa", JSON.stringify(historicoCaixa))
 
-      // Clear current transactions
-      setTransacoes([])
+      // Clear accumulated transactions
+      setTransacoesAcumuladas([])
+      localStorage.removeItem("transacoes_acumuladas")
 
-      // Show success message with daily total
-      alert(
-        `✅ CAIXA FECHADO COM SUCESSO!\n\nTotal do dia: R$ ${totalDia.toFixed(2)}\nTransações: ${estatisticas.quantidade}\nData: ${dataFechamento}\n\nO valor foi salvo no histórico e as transações foram limpas.`,
-      )
+      const successMessage = `✅ CAIXA FECHADO COM SUCESSO!\n\n💰 RESUMO FINAL:\n• Faturamento Total: R$ ${totalDia.toFixed(2)}\n• Total de Transações: ${totalTransacoes}\n• Ticket Médio: R$ ${totalTransacoes > 0 ? (totalDia / totalTransacoes).toFixed(2) : "0.00"}\n• Data/Hora: ${dataFechamento} às ${horaFechamento}\n\n📄 RELATÓRIO:\n• PDF gerado e baixado automaticamente\n• Dados salvos no histórico do sistema\n• Transações do período foram arquivadas\n\n🔄 PRÓXIMOS PASSOS:\n• O sistema está pronto para um novo período\n• Histórico foi limpo para novas transações\n• Relatório PDF disponível para impressão`
 
-      toast.success("Caixa fechado com sucesso!", `Total do dia: R$ ${totalDia.toFixed(2)}`)
+      alert(successMessage)
+
+      toast.success("🎉 Caixa fechado com sucesso!", {
+        autoClose: 5000,
+        hideProgressBar: false,
+      })
+
+      setTimeout(() => {
+        toast.info(`💼 Período encerrado: R$ ${totalDia.toFixed(2)} em ${totalTransacoes} transações`, {
+          autoClose: 4000,
+        })
+      }, 1000)
     } catch (error) {
       console.error("Erro ao fechar caixa:", error)
-      toast.error("Erro ao fechar caixa", "Tente novamente.")
+      toast.error(
+        "❌ Erro ao processar fechamento",
+        "Verifique sua conexão e tente novamente. Se o problema persistir, contate o suporte técnico.",
+      )
+
+      alert(
+        `❌ ERRO NO FECHAMENTO DO CAIXA\n\nDetalhes do erro:\n• Não foi possível completar o fechamento\n• Dados não foram perdidos\n• Tente novamente em alguns instantes\n\n🔧 Se o problema persistir:\n• Verifique sua conexão com a internet\n• Reinicie o navegador\n• Contate o suporte técnico`,
+      )
+    }
+  }
+
+  const handleExcluirHistorico = () => {
+    if (confirm("Tem certeza que deseja excluir todo o histórico de transações? Esta ação não pode ser desfeita.")) {
+      setTransacoesAcumuladas([])
+      localStorage.removeItem("transacoes_acumuladas")
+      toast.success("Histórico excluído", "Todas as transações foram removidas do histórico.")
     }
   }
 
@@ -402,20 +658,20 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
                 </div>
                 <div className="flex gap-3">
                   <button
+                    onClick={gerarRelatorioPDF}
+                    disabled={transacoesAcumuladas.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 border border-blue-400/30 rounded-xl text-blue-400 hover:bg-blue-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Gerar PDF
+                  </button>
+                  <button
                     onClick={handleFecharCaixa}
-                    disabled={transacoes.length === 0}
+                    disabled={transacoesAcumuladas.length === 0}
                     className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 border border-orange-400/30 rounded-xl text-orange-400 hover:bg-orange-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <DollarSign className="w-4 h-4" />
                     Fechar Caixa
-                  </button>
-                  <button
-                    onClick={handleExcluirHistorico}
-                    disabled={transacoes.length === 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-400/30 rounded-xl text-red-400 hover:bg-red-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Excluir Histórico
                   </button>
                   <button
                     onClick={exportarRelatorio}

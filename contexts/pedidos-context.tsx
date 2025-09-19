@@ -765,18 +765,12 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       if (fetchError) throw fetchError
 
       const pedidosToInsert = []
-      const pedidosToUpdate = []
 
       for (const item of itens) {
         const produto = products.find((p) => p.id === item.produto_id)
         if (!produto) continue
 
         const itemObservacoes = item.observacoes?.trim() || null
-
-        const existingPedido = existingPedidos?.find((p) => {
-          const pedidoObservacoes = p.observacoes?.trim() || null
-          return p.produto_id === item.produto_id && pedidoObservacoes === itemObservacoes
-        })
 
         // Determine status based on product category - only portions need status
         const isPorcao =
@@ -789,38 +783,17 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
         const itemStatus = isPorcao ? "preparando" : null
 
-        if (existingPedido) {
-          const newQuantidade = existingPedido.quantidade + item.quantidade
-          const newSubtotal = produto.preco * newQuantidade
-
-          pedidosToUpdate.push({
-            id: existingPedido.id,
-            quantidade: newQuantidade,
-            subtotal: newSubtotal,
-          })
-        } else {
-          pedidosToInsert.push({
-            comanda_id: comandaId,
-            produto_id: item.produto_id,
-            quantidade: item.quantidade,
-            preco_unitario: produto.preco,
-            subtotal: produto.preco * item.quantidade,
-            observacoes: itemObservacoes,
-            status: itemStatus,
-            tempo_pedido: new Date().toISOString(),
-          })
-        }
-      }
-
-      // Update existing pedidos
-      for (const update of pedidosToUpdate) {
-        await supabase
-          .from("pedidos")
-          .update({
-            quantidade: update.quantidade,
-            subtotal: update.subtotal,
-          })
-          .eq("id", update.id)
+        // Always create new pedidos - no more merging with existing ones
+        pedidosToInsert.push({
+          comanda_id: comandaId,
+          produto_id: item.produto_id,
+          quantidade: item.quantidade,
+          preco_unitario: produto.preco,
+          subtotal: produto.preco * item.quantidade,
+          observacoes: itemObservacoes,
+          status: itemStatus,
+          tempo_pedido: new Date().toISOString(),
+        })
       }
 
       // Insert new pedidos
@@ -828,7 +801,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         await supabase.from("pedidos").insert(pedidosToInsert)
       }
 
-      if (pedidosToUpdate.length > 0 || pedidosToInsert.length > 0) {
+      if (pedidosToInsert.length > 0) {
         // Calculate new total from all pedidos in this comanda
         const { data: allPedidos, error: totalError } = await supabase
           .from("pedidos")

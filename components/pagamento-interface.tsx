@@ -11,6 +11,7 @@ import { Banknote, Smartphone, Check, BarChart3 } from "lucide-react"
 import { PrintNotification } from "@/components/print-notification"
 import { usePrintStatus } from "@/hooks/use-print-status"
 import RelatoriosPagamento from "./relatorios-pagamento"
+import CategoryPrintSystem from "./category-print-system" // Assuming this component exists
 
 interface PagamentoInterfaceProps {
   onBack: () => void
@@ -316,56 +317,43 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   const handleAutoPrint = (comanda: any) => {
     const pedidosComanda = pedidos?.filter((pedido) => pedido.comanda_id === comanda.id) || []
 
-    const printContent = `
-      CONVENIÊNCIA
-      =====================================
-      
-      COMANDA: ${comanda.numero_comanda}
-      DATA: ${new Date().toLocaleDateString("pt-BR")}
-      HORA: ${new Date().toLocaleTimeString("pt-BR")}
-      
-      =====================================
-      ITENS:
-      =====================================
-      
-      ${pedidosComanda
-        .map((pedido) => {
-          const nome = pedido.produto?.nome || "Produto não encontrado"
-          const preco = (pedido.preco_unitario || 0).toFixed(2)
-          const quantidade = pedido.quantidade
-          const subtotal = (pedido.subtotal || 0).toFixed(2)
-          const obs = pedido.observacoes ? `\n    Obs: ${pedido.observacoes}` : ""
+    if (pedidosComanda.length > 0) {
+      const pedidosParaImprimir = pedidosComanda.map((pedido) => {
+        const produto = products.find((p) => p.id === pedido.produto_id)
+        return {
+          ...pedido,
+          produto: produto || {
+            id: pedido.produto_id,
+            nome: "Produto não encontrado",
+            preco: 0,
+            categoria_id: "",
+          },
+        }
+      })
 
-          return `${nome} x${quantidade}\n    R$ ${preco} cada = R$ ${subtotal}${obs}`
+      const printContainer = document.createElement("div")
+      document.body.appendChild(printContainer)
+
+      const categoryPrintElement = document.createElement("div")
+      printContainer.appendChild(categoryPrintElement)
+
+      // Create and render CategoryPrintSystem component
+      import("react").then(({ createElement }) => {
+        import("react-dom/client").then(({ createRoot }) => {
+          const root = createRoot(categoryPrintElement)
+          root.render(
+            createElement(CategoryPrintSystem, {
+              nomeComanda: comanda.numero_comanda,
+              pedidos: pedidosParaImprimir,
+              onPrintComplete: () => {
+                setTimeout(() => {
+                  document.body.removeChild(printContainer)
+                }, 5000)
+              },
+            }),
+          )
         })
-        .join("\n\n")}
-      
-      =====================================
-      
-      TOTAL: R$ ${comanda.total?.toFixed(2) || "0.00"}
-      
-      =====================================
-      
-      Obrigado pela preferência!
-    `
-
-    const printWindow = window.open("", "_blank")
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Comanda - ${comanda.numero_comanda}</title>
-            <style>
-              body { font-family: monospace; white-space: pre-line; margin: 20px; }
-              @media print { body { margin: 0; } }
-            </style>
-          </head>
-          <body>${printContent}</body>
-        </html>
-      `)
-      printWindow.document.close()
-      printWindow.print()
-      markAsPrinted(comanda.id)
+      })
     }
   }
 

@@ -160,8 +160,13 @@ export default function HomePage() {
             transition={{ duration: 0.8 }}
             className="mb-6"
           >
-            <div className="inline-block p-4 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-2xl">
-              <div className="text-4xl font-bold text-orange-400 px-8 py-4">CONVENIÊNCIA</div>
+            <div className="inline-block p-8 bg-gradient-to-br from-white/30 to-white/10 backdrop-blur-xl rounded-3xl border-4 border-orange-400/70 shadow-2xl hover:shadow-orange-400/40 transition-all duration-300 hover:scale-105">
+              <div className="text-6xl font-black text-orange-400 px-8 py-4 drop-shadow-2xl text-shadow-lg filter brightness-110 contrast-125">
+                CONVENIÊNCIA
+              </div>
+              <div className="text-lg text-orange-300 font-bold tracking-wider drop-shadow-lg bg-slate-900/50 px-4 py-2 rounded-lg border border-orange-400/30">
+                SISTEMA DE GESTÃO
+              </div>
             </div>
           </motion.div>
 
