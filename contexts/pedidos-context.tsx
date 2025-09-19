@@ -56,7 +56,7 @@ interface Pedido {
   quantidade: number
   preco_unitario: number
   subtotal: number
-  status: "pendente" | "preparando" | "pronto" | "entregue" | "cancelado"
+  status: "preparando" | "pronto" | "entregue" | "cancelado"
   observacoes?: string
   tempo_pedido: string
   produto?: Product
@@ -78,6 +78,7 @@ interface PedidosContextType {
   deleteMesa: (mesaId: string) => Promise<void>
   criarComanda: (nomeComanda: string) => Promise<string>
   updateComanda: (comandaId: string, updates: Partial<Comanda>) => Promise<void>
+  updateComandaTotal: (comandaId: string, novoTotal: number) => Promise<void>
   finalizarComanda: (comandaId: string) => Promise<void>
   excluirComanda: (comandaId: string) => Promise<void>
   adicionarItensComanda: (
@@ -89,6 +90,7 @@ interface PedidosContextType {
   // Pedido functions
   addPedido: (pedido: Omit<Pedido, "id" | "tempo_pedido">) => Promise<void>
   updatePedidoStatus: (pedidoId: string, status: Pedido["status"]) => Promise<void>
+  removerItemPedido: (pedidoId: string) => Promise<void>
   refreshData: () => Promise<void>
   // Legacy compatibility
   orders: Pedido[]
@@ -540,6 +542,29 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     setComandas((prev) => prev.map((c) => (c.id === comandaId ? { ...c, ...data } : c)))
   }
 
+  const updateComandaTotal = async (comandaId: string, novoTotal: number) => {
+    try {
+      console.log(`[v0] Atualizando total da comanda ${comandaId} para R$ ${novoTotal.toFixed(2)}`)
+
+      const { data, error } = await supabase
+        .from("comandas")
+        .update({ total: novoTotal })
+        .eq("id", comandaId)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Update local state
+      setComandas((prev) => prev.map((c) => (c.id === comandaId ? { ...c, total: novoTotal } : c)))
+
+      console.log(`[v0] Total da comanda atualizado com sucesso para R$ ${novoTotal.toFixed(2)}`)
+    } catch (error) {
+      console.error("[v0] Erro ao atualizar total da comanda:", error)
+      throw error
+    }
+  }
+
   const finalizarComanda = async (comandaId: string) => {
     try {
       // Delete all pedidos from this comanda
@@ -631,6 +656,24 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     setPedidos((prev) => prev.map((p) => (p.id === pedidoId ? { ...p, ...data } : p)))
   }
 
+  const removerItemPedido = async (pedidoId: string) => {
+    try {
+      console.log("[v0] Removendo pedido:", pedidoId)
+
+      const { error } = await supabase.from("pedidos").delete().eq("id", pedidoId)
+
+      if (error) throw error
+
+      // Remove from local state
+      setPedidos((prev) => prev.filter((p) => p.id !== pedidoId))
+
+      console.log("[v0] Pedido removido com sucesso")
+    } catch (error) {
+      console.error("[v0] Erro ao remover pedido:", error)
+      throw error
+    }
+  }
+
   const getPedidosByComanda = (comandaId: string) => {
     return pedidos.filter((pedido) => pedido.comanda_id === comandaId)
   }
@@ -677,7 +720,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
           produto.nome.toLowerCase().includes("pastel") ||
           produto.nome.toLowerCase().includes("mandioca")
 
-        const itemStatus = isPorcao ? "pendente" : null
+        const itemStatus = isPorcao ? "preparando" : null
 
         if (existingPedido) {
           const newQuantidade = existingPedido.quantidade + item.quantidade
@@ -786,15 +829,17 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         adicionarMesa,
         updateMesa,
         deleteMesa,
-        criarComanda, // New simplified function
+        criarComanda,
         updateComanda,
+        updateComandaTotal,
         finalizarComanda,
         excluirComanda,
         adicionarItensComanda,
-        getPedidosByComanda, // New direct function
-        calcularTotalComanda, // New calculation function
+        getPedidosByComanda,
+        calcularTotalComanda,
         addPedido,
         updatePedidoStatus,
+        removerItemPedido,
         adicionarPedido,
         atualizarStatus,
         // Deprecated functions

@@ -59,13 +59,13 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
 
   const handleOrderReady = useCallback(
     (event: CustomEvent) => {
-      const { mesaNome, itemName, timestamp } = event.detail
+      const { comandaNome, mesaNome, itemName, timestamp } = event.detail
 
-      console.log("[v0] Garcom: Received orderReady event:", { mesaNome, itemName, timestamp })
+      console.log("[v0] Garcom: Received orderReady event:", { comandaNome, mesaNome, itemName, timestamp })
 
       toast({
         title: "🍽️ Pedido Pronto!",
-        description: `${itemName} da ${mesaNome} está pronto para entrega`,
+        description: `${itemName} da ${comandaNome || mesaNome} está pronto para entrega`,
         duration: 5000,
       })
 
@@ -156,6 +156,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     console.log("[v0] Nome da comanda:", nomeComanda)
     console.log("[v0] Produtos selecionados:", produtosSelecionados)
     console.log("[v0] Observações:", observacoesProdutos)
+    console.log("[v0] Comanda selecionada (editing mode):", comandaSelecionada)
 
     if (!nomeComanda || !nomeComanda.trim()) {
       console.log("[v0] Erro: Nome da comanda não informado")
@@ -180,23 +181,256 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
 
       console.log("[v0] Itens para adicionar com observações:", itensParaAdicionar)
 
-      console.log("[v0] Criando nova comanda:", nomeComanda)
-      const comandaId = await criarComandaContext(nomeComanda?.trim() || "")
+      let comandaId
+
+      if (comandaSelecionada) {
+        console.log("[v0] Editando comanda existente:", comandaSelecionada.id)
+        comandaId = comandaSelecionada.id
+      } else {
+        console.log("[v0] Criando nova comanda:", nomeComanda)
+        comandaId = await criarComandaContext(nomeComanda?.trim() || "")
+      }
+
       await adicionarItensComanda(comandaId, itensParaAdicionar)
+
+      const pedidosParaImpressao = itensParaAdicionar.map((item) => {
+        const produto = products.find((p) => p.id === item.produto_id)
+        return {
+          id: `temp-${item.produto_id}`,
+          produto_id: item.produto_id,
+          comanda_id: comandaId,
+          quantidade: item.quantidade,
+          observacoes: item.observacoes,
+          produto: produto,
+        }
+      })
+
+      console.log("[v0] Pedidos criados para impressão:", pedidosParaImpressao)
+
+      if (pedidosParaImpressao && pedidosParaImpressao.length > 0) {
+        console.log("[v0] Iniciando impressão automática...")
+        handlePrintReceipt(getOriginalComandaName(nomeComanda), pedidosParaImpressao)
+        toast.success("Pedido realizado com sucesso e comprovante impresso!")
+      } else {
+        console.log("[v0] Aviso: Nenhum pedido encontrado para impressão")
+        toast.warning("Pedido criado, mas não foi possível imprimir automaticamente")
+      }
+
+      await refreshData()
 
       // Clear selections and observations
       setProdutosSelecionados({})
       setObservacoesProdutos({})
-      setNomeComanda("")
 
-      await refreshData()
-      toast.success("Pedido realizado com sucesso!")
+      if (!comandaSelecionada) {
+        setNomeComanda("")
+      }
+
+      if (comandaSelecionada) {
+        toast.success("Itens adicionados à comanda e comprovante impresso!")
+      } else {
+      }
+
       setTelaAtual("principal")
     } catch (error) {
       console.error("[v0] Erro ao finalizar pedido:", error)
       toast.error("Erro ao realizar pedido. Tente novamente.")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handlePrintReceipt = (comandaNome: string, pedidosDaComanda: any[]) => {
+    console.log("[v0] handlePrintReceipt chamada para:", comandaNome)
+    console.log("[v0] Pedidos para impressão:", pedidosDaComanda)
+
+    if (!pedidosDaComanda || pedidosDaComanda.length === 0) {
+      console.log("[v0] Erro: Nenhum pedido para imprimir")
+      toast.error("Nenhum pedido encontrado para impressão")
+      return
+    }
+
+    const total = pedidosDaComanda.reduce((sum, pedido) => {
+      return sum + (pedido.produto?.preco || 0) * pedido.quantidade
+    }, 0)
+
+    console.log("[v0] Total calculado para impressão:", total)
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Comprovante - ${comandaNome}</title>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Courier New', monospace; 
+              font-size: 12px;
+              line-height: 1.4;
+              color: #000;
+              background: white;
+              padding: 10px;
+            }
+            .receipt {
+              width: 100%;
+              max-width: 300px;
+              margin: 0 auto;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 15px;
+              border-bottom: 1px solid #000;
+              padding-bottom: 10px;
+            }
+            .logo {
+              font-size: 16px;
+              font-weight: bold;
+              margin-bottom: 5px;
+            }
+            .date {
+              font-size: 10px;
+              margin-top: 5px;
+            }
+            .comanda-info {
+              text-align: center;
+              margin: 15px 0;
+              font-weight: bold;
+              font-size: 14px;
+            }
+            .separator {
+              border-top: 1px dashed #000;
+              margin: 10px 0;
+            }
+            .item {
+              margin-bottom: 8px;
+            }
+            .item-line {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+            }
+            .item-name {
+              font-weight: bold;
+              flex: 1;
+              margin-right: 10px;
+            }
+            .item-price {
+              font-weight: bold;
+              white-space: nowrap;
+            }
+            .item-qty {
+              font-size: 10px;
+              margin-left: 10px;
+            }
+            .total-section {
+              border-top: 2px solid #000;
+              margin-top: 15px;
+              padding-top: 10px;
+            }
+            .total-line {
+              display: flex;
+              justify-content: space-between;
+              font-weight: bold;
+              font-size: 14px;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 15px;
+              border-top: 1px solid #000;
+              padding-top: 10px;
+              font-size: 10px;
+            }
+            @media print {
+              body { 
+                padding: 0;
+                margin: 0;
+              }
+              .receipt { 
+                max-width: none;
+                width: 100%;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="receipt">
+            <div class="header">
+              <div class="logo">CONVENIENCIA RIVES</div>
+              <div class="date">${new Date().toLocaleString("pt-BR")}</div>
+            </div>
+            
+            <div class="comanda-info">
+              Comanda: ${comandaNome}
+            </div>
+            
+            <div class="separator"></div>
+            
+            ${pedidosDaComanda
+              .map(
+                (pedido) => `
+              <div class="item">
+                <div class="item-line">
+                  <span class="item-name">${pedido.quantidade}x ${pedido.produto?.nome || "Item"}</span>
+                  <span class="item-price">R$ ${((pedido.produto?.preco || 0) * pedido.quantidade).toFixed(2)}</span>
+                </div>
+                ${pedido.observacoes ? `<div style="font-size: 10px; margin-left: 10px; font-style: italic;">Obs: ${pedido.observacoes}</div>` : ""}
+              </div>
+            `,
+              )
+              .join("")}
+            
+            <div class="total-section">
+              <div class="total-line">
+                <span>TOTAL GERAL:</span>
+                <span>R$ ${total.toFixed(2)}</span>
+              </div>
+            </div>
+            
+            <div class="footer">
+              <div>Obrigado pela preferencia!</div>
+              <div>Gerado pelo sistema em ${new Date().toLocaleString("pt-BR")}</div>
+            </div>
+          </div>
+          
+          <script>
+            console.log("[v0] Script de impressão carregado");
+            window.onload = function() {
+              console.log("[v0] Página carregada, iniciando impressão em 500ms");
+              setTimeout(function() {
+                console.log("[v0] Chamando window.print()");
+                window.print();
+                setTimeout(function() {
+                  console.log("[v0] Fechando janela de impressão");
+                  window.close();
+                }, 1000);
+              }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `
+
+    console.log("[v0] Criando blob e abrindo janela de impressão")
+    const blob = new Blob([printContent], { type: "text/html" })
+    const url = URL.createObjectURL(blob)
+
+    try {
+      const printWindow = window.open(url, "_blank", "width=800,height=600")
+
+      if (!printWindow) {
+        console.log("[v0] Popup bloqueado - tentativa silenciosa")
+        return
+      }
+
+      console.log("[v0] Janela de impressão aberta com sucesso")
+
+      printWindow.onbeforeunload = () => {
+        URL.revokeObjectURL(url)
+        console.log("[v0] URL do blob liberado da memória")
+      }
+    } catch (error) {
+      console.error("[v0] Erro ao abrir janela de impressão:", error)
     }
   }
 
@@ -720,7 +954,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                   <label className="block text-white font-medium mb-2">Nome da Comanda</label>
                   <input
                     type="text"
-                    placeholder="Ex: Mesa 1, João Silva, Comanda 5..."
+                    placeholder="Ex: João Silva, Comanda 5, Cliente VIP..."
                     value={nomeComanda}
                     onChange={(e) => setNomeComanda(e.target.value)}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -775,14 +1009,14 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
 
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <div className="lg:col-span-1 lg:order-1">
-                  <div className="sticky top-6 space-y-4">
+                  <div className="sticky top-6 space-y-4 max-h-[calc(90vh-3rem)] overflow-y-auto scrollbar-hide">
                     <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
                       <h4 className="font-semibold text-white mb-3">📋 Resumo do Pedido</h4>
 
                       {Object.keys(produtosSelecionados).length > 0 && (
                         <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-400/30 rounded-lg">
                           <h5 className="text-emerald-400 font-medium mb-2">🛒 Novos itens selecionados:</h5>
-                          <div className="space-y-2">
+                          <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-hide">
                             {Object.entries(produtosSelecionados).map(([produtoId, quantidade]) => {
                               const produto = products.find((p) => p.id === produtoId)
                               if (!produto) return null
@@ -821,7 +1055,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                       {pedidosExistentes.length > 0 && (
                         <div className="mb-4 p-3 bg-blue-500/10 border border-blue-400/30 rounded-lg">
                           <h5 className="text-blue-400 font-medium mb-2">🍽️ Itens já pedidos pelos clientes:</h5>
-                          <div className="space-y-2">
+                          <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-hide">
                             {pedidosExistentes.map((pedido, index) => (
                               <div
                                 key={index}
@@ -884,7 +1118,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                         {pedidosExistentes.length > 0 && (
                           <div className="pt-2 border-t border-white/20">
                             <p className="text-gray-300">
-                              <strong>Total geral da mesa:</strong>{" "}
+                              <strong>Total geral da comanda:</strong>{" "}
                               <span className="text-green-400 font-bold text-lg">
                                 R${" "}
                                 {(

@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Users, ChefHat, ClipboardList, CreditCard, Settings } from "lucide-react"
+import { Users, ClipboardList, CreditCard, Settings } from "lucide-react"
 import GarcomInterface from "@/components/garcom-interface"
-import CozinhaInterface from "@/components/cozinha-interface"
 import GestaoInterface from "@/components/gestao-pedidos"
 import PagamentoInterface from "@/components/pagamento-interface"
 import AdminProdutos from "@/components/admin-produtos"
 import PasswordProtection from "@/components/password-protection"
-import Image from "next/image"
 
 export default function HomePage() {
   const [activeInterface, setActiveInterface] = useState<string | null>(null)
@@ -17,6 +15,7 @@ export default function HomePage() {
   const [mainPasswordEntered, setMainPasswordEntered] = useState(false)
 
   useEffect(() => {
+    console.log("[v0] HomePage: Component mounted")
     // Clear old custom passwords that might conflict with new system
     const keysToRemove = [
       "custom_admin-password",
@@ -31,19 +30,23 @@ export default function HomePage() {
     })
   }, [])
 
+  console.log("[v0] HomePage: Rendering with state:", { activeInterface, showPasswordScreen, mainPasswordEntered })
+
   if (!mainPasswordEntered) {
+    console.log("[v0] HomePage: Showing main password screen")
     return (
       <PasswordProtection
         title="Digite a senha para acessar o sistema"
         onSuccess={() => setMainPasswordEntered(true)}
         onBack={() => {}} // No back button for main screen
-        requiredPassword="ConvenienciaR@2025" // Updated main password
+        requiredPassword="1154" // Updated main password
         storageKey="main-system-password-saved" // Added storage key for main password
       />
     )
   }
 
   const handleInterfaceClick = (interfaceId: string) => {
+    console.log("[v0] HomePage: Interface clicked:", interfaceId)
     if (interfaceId === "admin" || interfaceId === "pagamento") {
       setShowPasswordScreen(interfaceId)
       setActiveInterface(interfaceId)
@@ -54,11 +57,13 @@ export default function HomePage() {
   }
 
   const handleAdminPasswordSuccess = () => {
+    console.log("[v0] HomePage: Admin password success")
     setShowPasswordScreen(null)
     // activeInterface is already set, just remove password screen
   }
 
   if (showPasswordScreen === "admin") {
+    console.log("[v0] HomePage: Showing admin password screen")
     return (
       <PasswordProtection
         title="Acesso à área administrativa"
@@ -74,6 +79,7 @@ export default function HomePage() {
   }
 
   if (showPasswordScreen === "pagamento") {
+    console.log("[v0] HomePage: Showing payment password screen")
     return (
       <PasswordProtection
         title="Acesso ao sistema de pagamento"
@@ -89,9 +95,9 @@ export default function HomePage() {
   }
 
   if (activeInterface) {
+    console.log("[v0] HomePage: Showing interface:", activeInterface)
     const interfaces = {
       garcom: <GarcomInterface onBack={() => setActiveInterface(null)} />,
-      cozinha: <CozinhaInterface onBack={() => setActiveInterface(null)} />,
       gestao: <GestaoInterface onBack={() => setActiveInterface(null)} />,
       pagamento: <PagamentoInterface onBack={() => setActiveInterface(null)} />,
       admin: <AdminProdutos onBack={() => setActiveInterface(null)} />,
@@ -99,22 +105,16 @@ export default function HomePage() {
     return interfaces[activeInterface as keyof typeof interfaces]
   }
 
+  console.log("[v0] HomePage: Showing main menu")
+
   const interfaceCards = [
     {
       id: "garcom",
       title: "Interface do Garçom",
-      description: "Faça pedidos diretamente das mesas com interface intuitiva e responsiva",
+      description: "Faça pedidos diretamente das comandas com interface intuitiva e responsiva",
       icon: Users,
       color: "from-emerald-500 to-teal-600",
-      features: ["Seleção de mesas", "Sistema de comandas", "Divisão de conta"],
-    },
-    {
-      id: "cozinha",
-      title: "Interface da Cozinha",
-      description: "Visualize e gerencie pedidos em tempo real com notificações instantâneas",
-      icon: ChefHat,
-      color: "from-orange-500 to-red-600",
-      features: ["Pedidos em tempo real", "Status dos pedidos", "Filtros por comandas"],
+      features: ["Sistema de comandas", "Pedidos por nome", "Impressão automática"],
     },
     {
       id: "gestao",
@@ -144,10 +144,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-slate-900">
-      <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url(/restaurant-interior.png)" }}
-      />
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-purple-900/90 to-slate-900/95 backdrop-blur-sm" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
@@ -159,13 +155,7 @@ export default function HomePage() {
             className="mb-6"
           >
             <div className="inline-block p-4 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-2xl">
-              <Image
-                src="/logo-conveniencia.png"
-                alt="Conveniência"
-                width={300}
-                height={80}
-                className="hover:scale-105 transition-transform duration-300"
-              />
+              <div className="text-4xl font-bold text-orange-400 px-8 py-4">CONVENIÊNCIA</div>
             </div>
           </motion.div>
 
@@ -195,7 +185,7 @@ export default function HomePage() {
 
         <main className="flex-1 container mx-auto px-4 pb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-6xl mx-auto">
-            {interfaceCards.slice(0, 4).map((card, index) => {
+            {interfaceCards.map((card, index) => {
               const Icon = card.icon
               return (
                 <motion.div
@@ -240,56 +230,6 @@ export default function HomePage() {
                 </motion.div>
               )
             })}
-          </div>
-
-          <div className="flex justify-center mt-6 max-w-6xl mx-auto">
-            <div className="w-full max-w-md">
-              {(() => {
-                const card = interfaceCards[4] // Admin card
-                const Icon = card.icon
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.4 }}
-                    onClick={() => handleInterfaceClick(card.id)}
-                    className="group cursor-pointer"
-                  >
-                    <div className="h-full bg-slate-800/70 backdrop-blur-xl rounded-2xl border border-white/20 p-6 hover:bg-slate-800/80 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div
-                          className={`p-3 rounded-xl bg-gradient-to-r ${card.color} shadow-lg group-hover:scale-110 transition-transform duration-300`}
-                        >
-                          <Icon className="w-6 h-6 text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-xl font-bold text-white mb-2 group-hover:text-orange-300 transition-colors">
-                            {card.title}
-                          </h3>
-                          <p className="text-gray-200 text-sm leading-relaxed">{card.description}</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 mb-4">
-                        {card.features.map((feature, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-sm text-gray-300">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            {feature}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                        <span className="text-sm text-gray-400">Clique para acessar</span>
-                        <div className="text-orange-400 group-hover:translate-x-1 transition-transform duration-300">
-                          →
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )
-              })()}
-            </div>
           </div>
         </main>
 

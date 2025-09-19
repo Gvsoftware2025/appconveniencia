@@ -1,10 +1,14 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { ArrowLeft, CreditCard, Banknote, Smartphone, Check, Users, Minus, Plus, Calculator } from "lucide-react"
-import Image from "next/image"
 import { motion } from "framer-motion"
+import { ArrowLeft, CreditCard, Users, Calculator, Plus, Minus, X, Printer } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 import { usePedidos } from "@/contexts/pedidos-context"
+import { toast } from "sonner"
+import Image from "next/image"
+import { Banknote, Smartphone, Check, BarChart3 } from "lucide-react"
+import RelatoriosPagamento from "./relatorios-pagamento"
 
 interface PagamentoInterfaceProps {
   onBack: () => void
@@ -27,7 +31,16 @@ interface DivisaoConta {
 }
 
 export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfaceProps) {
-  const { comandas, pedidos, finalizarComanda, getPedidosByComanda, calcularTotalComanda } = usePedidos()
+  const {
+    comandas,
+    pedidos,
+    finalizarComanda,
+    getPedidosByComanda,
+    calcularTotalComanda,
+    updateComandaTotal,
+    addPedido,
+    refreshData,
+  } = usePedidos()
 
   const [metodoPagamento, setMetodoPagamento] = useState("")
   const [processando, setProcessando] = useState(false)
@@ -47,6 +60,19 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   })
   const [itensPagos, setItensPagos] = useState<ItemPagamento[]>([])
   const [subModoParcial, setSubModoParcial] = useState<"valor" | "itens">("valor")
+  const [mostrarRelatorios, setMostrarRelatorios] = useState(false)
+  const [mostrarModalDiversos, setMostrarModalDiversos] = useState(false)
+  const [itemDiverso, setItemDiverso] = useState({
+    nome: "",
+    descricao: "",
+    preco: "",
+  })
+
+  const [nomeItemDiverso, setNomeItemDiverso] = useState("")
+  const [precoItemDiverso, setPrecoItemDiverso] = useState(0)
+  const [observacaoItemDiverso, setObservacaoItemDiverso] = useState("")
+
+  const supabase = createClient()
 
   const comandasAbertas = useMemo(() => {
     console.log("[v0] Todas as comandas:", comandas)
@@ -60,7 +86,6 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
   const getOriginalComandaName = (numeroComanda: string) => {
     if (!numeroComanda) return "Comanda"
-    // Remove timestamp suffix (everything after last dash followed by numbers)
     return numeroComanda.replace(/-\d+$/, "")
   }
 
@@ -80,10 +105,14 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
   const valorTotal = useMemo(() => {
     if (!comandaSelecionada) return 0
-    const totalBruto = calcularTotalComanda(comandaSelecionada.id)
-    const totalPago = itensPagos.reduce((total, item) => total + item.quantidadePaga * item.precoUnitario, 0)
-    return totalBruto - totalPago
-  }, [comandaSelecionada, calcularTotalComanda, itensPagos])
+
+    // Calculate total from all pedidos for this comanda
+    const totalFromPedidos = pedidos
+      .filter((pedido) => pedido.comanda_id === comandaSelecionada.id)
+      .reduce((total, pedido) => total + (pedido.subtotal || 0), 0)
+
+    return totalFromPedidos
+  }, [comandaSelecionada, pedidos])
 
   const valorOriginalComanda = useMemo(() => {
     if (!comandaSelecionada) return 0
@@ -91,8 +120,11 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   }, [comandaSelecionada, calcularTotalComanda])
 
   const valorJaPago = useMemo(() => {
-    return itensPagos.reduce((total, item) => total + item.quantidadePaga * item.precoUnitario, 0)
-  }, [itensPagos])
+    if (!comandaSelecionada) return 0
+    const originalTotal = calcularTotalComanda(comandaSelecionada.id)
+    const currentTotal = comandaSelecionada.total || 0
+    return Math.max(0, originalTotal - currentTotal)
+  }, [comandaSelecionada, calcularTotalComanda])
 
   const taxaServico = useMemo(() => {
     return incluirTaxaServico ? valorTotal * 0.1 : 0
@@ -126,6 +158,8 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
               : 0
             : calcularTotalItensSelecionados() + (incluirTaxaServico ? calcularTotalItensSelecionados() * 0.1 : 0)
           : totalFinal
+
+    console.log("[v0] Calculando troco - Valor pago:", valorPagoNum, "Total:", total, "Troco:", valorPagoNum - total)
     return valorPagoNum - total
   }
 
@@ -163,8 +197,208 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     setItensSelecionados({})
   }
 
+  const handleAdicionarItemDiverso = async () => {
+    if (!nomeItemDiverso.trim() || precoItemDiverso <= 0) {
+      toast.error("Nome e preço são obrigatórios")
+      return
+    }
+
+    try {
+      // First, check if "Diversos" product exists, if not create it
+      let { data: diversosProduct, error: fetchError } = await supabase
+        .from("produtos")
+        .select("id")
+        .eq("nome", "Diversos")
+        .single()
+
+      if (fetchError && fetchError.code === "PGRST116") {
+        // Product doesn't exist, create it
+        const { data: newProduct, error: createError } = await supabase
+          .from("produtos")
+          .insert([
+            {
+              nome: "Diversos",
+              categoria_id: "2b8538f0-9ffc-4982-bd15-b8fb49f67fa1", // Default category
+              preco: 0.0,
+              disponivel: true,
+              descricao: "Produto genérico para itens diversos adicionados manualmente",
+              tempo_preparo: 0,
+              ingredientes: [],
+            },
+          ])
+          .select("id")
+          .single()
+
+        if (createError) throw createError
+        diversosProduct = newProduct
+      } else if (fetchError) {
+        throw fetchError
+      }
+
+      // Now add the pedido with the custom name and price in observacoes
+      const observacaoCompleta = `${nomeItemDiverso} - R$ ${precoItemDiverso.toFixed(2)}${observacaoItemDiverso ? ` | ${observacaoItemDiverso}` : ""}`
+
+      const { error: insertError } = await supabase.from("pedidos").insert([
+        {
+          comanda_id: comandaSelecionada.id,
+          produto_id: diversosProduct.id,
+          quantidade: 1,
+          preco_unitario: precoItemDiverso,
+          subtotal: precoItemDiverso,
+          observacoes: observacaoCompleta,
+          status: null,
+          tempo_pedido: new Date().toISOString(),
+        },
+      ])
+
+      if (insertError) throw insertError
+
+      // Reset form
+      setNomeItemDiverso("")
+      setPrecoItemDiverso(0)
+      setObservacaoItemDiverso("")
+      setMostrarModalDiversos(false)
+
+      toast.success("Item diverso adicionado com sucesso!")
+
+      // Refresh data
+      await refreshData()
+    } catch (error) {
+      console.error("[v0] Erro ao adicionar item diverso:", error)
+      toast.error("Erro ao adicionar item diverso")
+    }
+  }
+
+  const handleImprimir = () => {
+    if (!comandaSelecionada) return
+
+    const pedidosDaComanda = pedidos.filter((pedido) => pedido.comanda_id === comandaSelecionada.id)
+    const total = pedidosDaComanda.reduce((sum, pedido) => sum + (pedido.subtotal || 0), 0)
+
+    const receiptHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Comprovante - ${comandaSelecionada.numero_comanda}</title>
+        <style>
+          body { 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px; 
+            line-height: 1.4; 
+            margin: 0; 
+            padding: 20px;
+            max-width: 300px;
+          }
+          .header { 
+            text-align: center; 
+            border-bottom: 2px solid #000; 
+            padding-bottom: 10px; 
+            margin-bottom: 15px; 
+          }
+          .item { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 5px; 
+            border-bottom: 1px dotted #ccc;
+            padding-bottom: 3px;
+          }
+          .total { 
+            border-top: 2px solid #000; 
+            padding-top: 10px; 
+            margin-top: 15px; 
+            font-weight: bold; 
+            font-size: 14px;
+          }
+          .footer { 
+            text-align: center; 
+            margin-top: 20px; 
+            font-size: 10px; 
+          }
+          .status {
+            text-align: center;
+            margin: 15px 0;
+            padding: 8px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            font-weight: bold;
+          }
+          .paid { background-color: #d4edda; color: #155724; }
+          .unpaid { background-color: #f8d7da; color: #721c24; }
+          @media print {
+            body { margin: 0; padding: 10px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h2>CONVENIÊNCIA RIVES</h2>
+          <p>Comanda: ${comandaSelecionada.numero_comanda}</p>
+          <p>${new Date().toLocaleString("pt-BR")}</p>
+        </div>
+        
+        <div class="status ${comandaSelecionada.total <= 0 ? "paid" : "unpaid"}">
+          ${comandaSelecionada.total <= 0 ? "✓ CONTA TOTALMENTE PAGA" : `⚠ PENDENTE: R$ ${comandaSelecionada.total.toFixed(2)}`}
+        </div>
+        
+        <div class="items">
+          ${pedidosDaComanda
+            .map(
+              (pedido) => `
+            <div class="item">
+              <div>
+                <div>${pedido.quantidade}x ${pedido.produto?.nome || "Produto não encontrado"}</div>
+                ${pedido.observacoes ? `<div style="font-size: 10px; color: #666;">Obs: ${pedido.observacoes}</div>` : ""}
+              </div>
+              <div>R$ ${(pedido.subtotal || 0).toFixed(2)}</div>
+            </div>
+          `,
+            )
+            .join("")}
+        </div>
+        
+        <div class="total">
+          <div style="display: flex; justify-content: space-between;">
+            <span>TOTAL ORIGINAL:</span>
+            <span>R$ ${total.toFixed(2)}</span>
+          </div>
+          ${
+            comandaSelecionada.total !== total
+              ? `
+          <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+            <span>VALOR RESTANTE:</span>
+            <span>R$ ${comandaSelecionada.total.toFixed(2)}</span>
+          </div>
+          `
+              : ""
+          }
+        </div>
+        
+        <div class="footer">
+          <p>Obrigado pela preferência!</p>
+          <p>Gerado pelo sistema em ${new Date().toLocaleString("pt-BR")}</p>
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 100);
+          }
+        </script>
+      </body>
+      </html>
+    `
+
+    const printWindow = window.open("", "_blank")
+    if (printWindow) {
+      printWindow.document.write(receiptHTML)
+      printWindow.document.close()
+    }
+  }
+
   const handleFecharConta = async () => {
-    if (!metodoPagamento || !comandaSelecionada) return
+    if (!comandaSelecionada) return
 
     if (metodoPagamento === "dinheiro") {
       const troco = calcularTroco()
@@ -185,46 +419,95 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     setProcessando(true)
 
     try {
-      if (modoPagamento === "total") {
+      if (modoPagamento === "total" || !metodoPagamento) {
         await finalizarComanda(comandaSelecionada.id)
       } else if (modoPagamento === "parcial") {
-        const valorPagoNum = Number.parseFloat(valorPagamentoParcial) || 0
-        if (valorPagoNum > 0) {
-          const novoItemPago: ItemPagamento = {
-            pedidoId: `pagamento-${Date.now()}`,
-            produtoNome: "Pagamento Parcial",
-            precoUnitario: valorPagoNum,
-            quantidadeTotal: 1,
-            quantidadePaga: 1,
-            quantidadeRestante: 0,
-          }
+        if (subModoParcial === "valor") {
+          const valorPagoNum = Number.parseFloat(valorPagamentoParcial) || 0
+          if (valorPagoNum > 0) {
+            const novoItemPago: ItemPagamento = {
+              pedidoId: `pagamento-parcial-${Date.now()}`,
+              produtoNome: "Pagamento Parcial",
+              precoUnitario: valorPagoNum,
+              quantidadeTotal: 1,
+              quantidadePaga: 1,
+              quantidadeRestante: 0,
+            }
 
-          setItensPagos((prev) => [...prev, novoItemPago])
+            setItensPagos((prev) => [...prev, novoItemPago])
+
+            const novoTotal = Math.max(0, comandaSelecionada.total - valorPagoNum)
+            console.log(
+              "[v0] Atualizando total da comanda",
+              comandaSelecionada.id,
+              "de",
+              comandaSelecionada.total,
+              "para",
+              novoTotal,
+            )
+            await updateComandaTotal(comandaSelecionada.id, novoTotal)
+
+            setComandaSelecionada((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    total: novoTotal,
+                  }
+                : null,
+            )
+          }
+        } else if (subModoParcial === "itens") {
+          const itensSelecionadosArray = Object.entries(itensSelecionados)
+            .filter(([_, quantidade]) => quantidade > 0)
+            .map(([pedidoId, quantidade]) => {
+              const pedido = pedidosDaComandaSelecionada.find((p) => p.id === pedidoId)
+              return {
+                pedidoId: pedidoId,
+                produtoNome: pedido?.produto?.nome || "Produto não encontrado",
+                precoUnitario: pedido?.preco_unitario || 0,
+                quantidadeTotal: quantidade,
+                quantidadePaga: quantidade,
+                quantidadeRestante: 0,
+              }
+            })
+
+          setItensPagos((prev) => [...prev, ...itensSelecionadosArray])
+
+          const valorPagoItens = itensSelecionadosArray.reduce(
+            (total, item) => total + item.quantidadePaga * item.precoUnitario,
+            0,
+          )
+
+          const novoTotal = Math.max(0, comandaSelecionada.total - valorPagoItens)
+          console.log(
+            "[v0] Atualizando total da comanda",
+            comandaSelecionada.id,
+            "de",
+            comandaSelecionada.total,
+            "para",
+            novoTotal,
+          )
+          await updateComandaTotal(comandaSelecionada.id, novoTotal)
+
+          setComandaSelecionada((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  total: novoTotal,
+                }
+              : null,
+          )
         }
 
         setMetodoPagamento("")
         setValorPago("")
         setValorPagamentoParcial("")
         setMostrarTroco(false)
+        setItensSelecionados({})
         setProcessando(false)
         return
-      } else if (modoPagamento === "itens") {
-        const itensSelecionadosArray = Object.keys(itensSelecionados).map((key) => ({
-          pedidoId: key,
-          produtoNome: pedidos.find((p) => p.id === key)?.produto?.nome || "Produto não encontrado",
-          precoUnitario: pedidos.find((p) => p.id === key)?.preco_unitario || 0,
-          quantidadeTotal: itensSelecionados[key],
-          quantidadePaga: itensSelecionados[key],
-          quantidadeRestante: 0,
-        }))
-
-        setItensPagos((prev) => [...prev, ...itensSelecionadosArray])
-        setMetodoPagamento("")
-        setValorPago("")
-        setValorPagamentoParcial("")
-        setMostrarTroco(false)
-        setProcessando(false)
-        return
+      } else if (modoPagamento === "dividir") {
+        await finalizarComanda(comandaSelecionada.id)
       }
 
       setContaFechada(true)
@@ -241,7 +524,6 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
         setDivisaoConta({ numeroPessoas: 2, valorPorPessoa: 0, itensIndividuais: [] })
         setItensPagos([])
         setItensSelecionados({})
-        // onBack() removed - user stays in payment interface
       }, 2000)
     } catch (error) {
       console.error("[v0] Erro ao fechar conta:", error)
@@ -309,6 +591,10 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     }
   }, [comandaSelecionada, pedidosDaComandaSelecionada.length, itensPagos])
 
+  if (mostrarRelatorios) {
+    return <RelatoriosPagamento onBack={() => setMostrarRelatorios(false)} />
+  }
+
   if (contaFechada) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -364,8 +650,18 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
             />
           </div>
 
-          <div className="px-4 py-2 backdrop-blur-xl bg-emerald-500/20 border border-emerald-400/30 rounded-xl">
-            <span className="text-emerald-400 font-medium text-sm">Sistema de Pagamento</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMostrarRelatorios(true)}
+              className="flex items-center gap-2 px-4 py-2 backdrop-blur-xl bg-blue-500/20 border border-blue-400/30 rounded-xl text-blue-400 hover:bg-blue-500/30 transition-all duration-300"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Relatórios
+            </button>
+
+            <div className="px-4 py-2 backdrop-blur-xl bg-emerald-500/20 border border-emerald-400/30 rounded-xl">
+              <span className="text-emerald-400 font-medium text-sm">Sistema de Pagamento</span>
+            </div>
           </div>
         </header>
 
@@ -373,56 +669,22 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
           {!comandaSelecionada ? (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto">
               <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 mb-6">
-                <h1 className="text-3xl font-bold text-white mb-2">Sistema de Pagamento</h1>
-                <p className="text-white/70">Selecione uma comanda para fechar a conta</p>
-              </div>
+                <div className="text-center mb-8">
+                  <h2 className="text-2xl font-bold text-white mb-2">Sistema de Pagamento</h2>
+                  <p className="text-gray-300">Selecione uma comanda para fechar a conta</p>
+                </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                 <motion.div
                   whileHover={{ scale: 1.02 }}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6"
+                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 text-center"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-center gap-4">
                     <div className="p-3 bg-orange-500/20 rounded-xl">
                       <Users className="w-6 h-6 text-orange-400" />
                     </div>
                     <div>
                       <p className="text-3xl font-bold text-white">{comandasAbertas.length}</p>
                       <p className="text-gray-300">Comandas Abertas</p>
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 bg-emerald-500/20 rounded-xl">
-                      <CreditCard className="w-6 h-6 text-emerald-400" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold text-white">
-                        R$ {calcularTotalComanda(comandasAbertas[0].id).toFixed(2)}
-                      </p>
-                      <p className="text-gray-300">Valor Total</p>
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 bg-blue-500/20 rounded-xl">
-                      <Users className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold text-white">
-                        {Math.round(pedidos.length / comandasAbertas.length)}
-                      </p>
-                      <p className="text-gray-300">Itens por Comanda</p>
                     </div>
                   </div>
                 </motion.div>
@@ -463,6 +725,30 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                   Fechar Conta - {getOriginalComandaName(comandaSelecionada.numero_comanda)}
                 </h1>
 
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setComandaSelecionada(null)}
+                    className="flex-1 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-xl transition-colors"
+                  >
+                    Voltar
+                  </button>
+
+                  <button
+                    onClick={handleImprimir}
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center gap-2"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Imprimir
+                  </button>
+
+                  <button
+                    onClick={() => setMostrarModalDiversos(true)}
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors"
+                  >
+                    + Adicionar Item Diverso
+                  </button>
+                </div>
+
                 <div className="mb-6">
                   <label className="block text-white font-medium mb-3">Tipo de Pagamento</label>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -493,8 +779,13 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
                     <div className="mb-4 p-4 backdrop-blur-xl bg-purple-500/10 border border-purple-400/30 rounded-xl">
                       <div className="text-center">
-                        <p className="text-purple-400 font-bold text-2xl">R$ {valorOriginalComanda.toFixed(2)}</p>
-                        <p className="text-purple-300 text-sm">Valor Total da Compra</p>
+                        <p className="text-purple-400 font-bold text-2xl">R$ {valorTotal.toFixed(2)}</p>
+                        <p className="text-purple-300 text-sm">Valor Restante da Compra</p>
+                        {valorJaPago > 0 && (
+                          <p className="text-purple-300/70 text-xs mt-1">
+                            (Original: R$ {valorOriginalComanda.toFixed(2)} - Pago: R$ {valorJaPago.toFixed(2)})
+                          </p>
+                        )}
                         {incluirTaxaServico && (
                           <p className="text-purple-300/70 text-xs mt-1">(Inclui taxa de serviço de 10%)</p>
                         )}
@@ -632,7 +923,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
                                       <button
                                         onClick={() => handleItemSelection(pedido.id, quantidadeDisponivel)}
-                                        className="px-3 py-1 bg-blue-500/20 border border-blue-400/50 rounded text-blue-400 text-sm hover:bg-blue-500/30"
+                                        className="px-3 py-1 bg-blue-500/20 border border-blue-400/30 rounded text-blue-400 text-sm hover:bg-blue-500/30"
                                       >
                                         Selecionar Todos
                                       </button>
@@ -897,7 +1188,6 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                 <button
                   onClick={handleFecharConta}
                   disabled={
-                    !metodoPagamento ||
                     processando ||
                     (metodoPagamento === "dinheiro" && calcularTroco() < 0) ||
                     (modoPagamento === "parcial" &&
@@ -922,6 +1212,83 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
           )}
         </div>
       </div>
+
+      {mostrarModalDiversos && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Adicionar Item Diverso</h2>
+              <button
+                onClick={() => {
+                  setMostrarModalDiversos(false)
+                  setItemDiverso({ nome: "", descricao: "", preco: "" })
+                }}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white font-medium mb-2">Nome do Item *</label>
+                <input
+                  type="text"
+                  value={nomeItemDiverso}
+                  onChange={(e) => setNomeItemDiverso(e.target.value)}
+                  placeholder="Ex: Chocolate, Cigarro, etc."
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-white font-medium mb-2">Preço (R$) *</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={precoItemDiverso}
+                  onChange={(e) => setPrecoItemDiverso(Number(e.target.value))}
+                  placeholder="0,00"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-white font-medium mb-2">Descrição (opcional)</label>
+                <textarea
+                  value={observacaoItemDiverso}
+                  onChange={(e) => setObservacaoItemDiverso(e.target.value)}
+                  placeholder="Observações sobre o item..."
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 h-20 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setMostrarModalDiversos(false)
+                    setNomeItemDiverso("")
+                    setPrecoItemDiverso(0)
+                    setObservacaoItemDiverso("")
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-700/60 text-white rounded-lg hover:bg-slate-700/80 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAdicionarItemDiverso}
+                  disabled={!nomeItemDiverso || !precoItemDiverso}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg hover:from-purple-600 hover:to-pink-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Adicionar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

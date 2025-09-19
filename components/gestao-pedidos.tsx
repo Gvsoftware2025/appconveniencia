@@ -1,8 +1,6 @@
 "use client"
-
-import { useState } from "react"
 import { usePedidos } from "@/contexts/pedidos-context"
-import { ArrowLeft, BarChart3, Clock, DollarSign, Users, Settings } from "lucide-react"
+import { ArrowLeft, BarChart3, Clock, Settings } from "lucide-react"
 import Image from "next/image"
 
 interface GestaoPedidosProps {
@@ -11,15 +9,10 @@ interface GestaoPedidosProps {
 }
 
 export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedidosProps) {
-  const { pedidos, mesas, comandas, getPedidosByComanda, calcularTotalComanda } = usePedidos()
-  const [filtroStatus, setFiltroStatus] = useState("todos")
-
+  const { pedidos, comandas, getPedidosByComanda, calcularTotalComanda } = usePedidos()
   const totalComandas = (comandas || []).length
   const comandasAtivas = (comandas || []).filter((c) => c.status === "aberta").length
-  const mesasOcupadas = (mesas || []).filter((m) => m.status === "ocupada").length
-  const faturamentoTotal = (comandas || []).reduce((total, comanda) => {
-    return total + (comanda.total || 0)
-  }, 0)
+  const todasComandas = comandas || []
 
   const getComandaStatus = (comandaId: string) => {
     const pedidosDaComanda = getPedidosByComanda(comandaId)
@@ -27,7 +20,7 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
 
     const statusCounts = pedidosDaComanda.reduce(
       (acc, pedido) => {
-        const status = pedido.status || "pendente"
+        const status = pedido.status || "preparando"
         acc[status] = (acc[status] || 0) + 1
         return acc
       },
@@ -37,52 +30,10 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
     if (statusCounts.entregue === pedidosDaComanda.length) return "entregue"
     if (statusCounts.pronto > 0) return "pronto"
     if (statusCounts.preparando > 0) return "preparando"
-    return "pendente"
+    return "preparando"
   }
 
-  const comandasFiltradas =
-    filtroStatus === "todos"
-      ? comandas || []
-      : (comandas || []).filter((c) => {
-          const status = getComandaStatus(c.id)
-          return status === filtroStatus
-        })
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pendente":
-        return "text-yellow-400 bg-yellow-500/20 border-yellow-400/30"
-      case "preparando":
-        return "text-blue-400 bg-blue-500/20 border-blue-400/30"
-      case "pronto":
-        return "text-green-400 bg-green-500/20 border-green-400/30"
-      case "entregue":
-        return "text-purple-400 bg-purple-500/20 border-purple-400/30"
-      case "sem_pedidos":
-        return "text-gray-400 bg-gray-500/20 border-gray-400/30"
-      default:
-        return "text-white/60 bg-white/10 border-white/20"
-    }
-  }
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "pendente":
-        return "Pendente"
-      case "preparando":
-        return "Preparando"
-      case "pronto":
-        return "Pronto"
-      case "entregue":
-        return "Entregue"
-      case "sem_pedidos":
-        return "Sem Pedidos"
-      default:
-        return "Indefinido"
-    }
-  }
-
-  if (!pedidos || !mesas || !comandas) {
+  if (!pedidos || !comandas) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
         <div className="text-white text-xl">Carregando dados...</div>
@@ -134,7 +85,7 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
         </header>
 
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-2">
                 <BarChart3 className="w-8 h-8 text-blue-400" />
@@ -154,61 +105,14 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                 </div>
               </div>
             </div>
-
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Users className="w-8 h-8 text-green-400" />
-                <div>
-                  <p className="text-2xl font-bold text-white">{mesasOcupadas}</p>
-                  <p className="text-white/60 text-sm">Mesas Ocupadas</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <DollarSign className="w-8 h-8 text-emerald-400" />
-                <div>
-                  <p className="text-2xl font-bold text-white">R$ {(faturamentoTotal || 0).toFixed(2)}</p>
-                  <p className="text-white/60 text-sm">Faturamento</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 mb-6">
-            <h2 className="text-xl font-bold text-white mb-4">Filtrar Comandas</h2>
-            <div className="flex flex-wrap gap-3">
-              {[
-                { id: "todos", label: "Todos" },
-                { id: "pendente", label: "Pendentes" },
-                { id: "preparando", label: "Em Preparo" },
-                { id: "pronto", label: "Prontos" },
-                { id: "entregue", label: "Entregues" },
-                { id: "sem_pedidos", label: "Sem Pedidos" },
-              ].map(({ id, label }) => (
-                <button
-                  key={id}
-                  onClick={() => setFiltroStatus(id)}
-                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
-                    filtroStatus === id
-                      ? "bg-emerald-500/20 border border-emerald-400/50 text-emerald-400"
-                      : "backdrop-blur-xl bg-white/5 border border-white/20 text-white hover:bg-white/10"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
             <h2 className="text-xl font-bold text-white mb-4">Lista de Comandas</h2>
 
             <div className="space-y-4">
-              {comandasFiltradas.map((comanda) => {
+              {todasComandas.map((comanda) => {
                 const pedidosDaComanda = getPedidosByComanda(comanda.id)
-                const statusComanda = getComandaStatus(comanda.id)
                 const totalComanda = calcularTotalComanda(comanda.id)
 
                 return (
@@ -217,11 +121,6 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-white font-bold">Comanda: {comanda.numero_comanda}</span>
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(statusComanda)}`}
-                          >
-                            {getStatusLabel(statusComanda)}
-                          </span>
                         </div>
                         <div className="text-white/80 text-sm">
                           {pedidosDaComanda.length > 0 ? (
@@ -245,7 +144,7 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                 )
               })}
 
-              {comandasFiltradas.length === 0 && (
+              {todasComandas.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-white/60 text-lg">Nenhuma comanda encontrada</p>
                 </div>

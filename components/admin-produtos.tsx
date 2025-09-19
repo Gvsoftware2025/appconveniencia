@@ -76,13 +76,6 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
     setShowModal(true)
   }
 
-  const handleCloseModal = () => {
-    setShowModal(false)
-    setEditingProduct(null)
-    setImageFile(null)
-    setImagePreview("")
-  }
-
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -204,6 +197,11 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
   }
 
   const handleDelete = async (productId: string) => {
+    if (productId === "00000000-0000-0000-0000-000000000001") {
+      toast.error("Não é possível excluir", "O produto 'Diversos' é um produto fixo do sistema.")
+      return
+    }
+
     if (confirm("Tem certeza que deseja excluir este produto?")) {
       try {
         await deleteProduct(productId)
@@ -213,6 +211,26 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
         toast.error("Erro ao excluir produto", "Não foi possível remover o produto. Tente novamente.")
       }
     }
+  }
+
+  const getCategoryName = (categoryId: string) => {
+    switch (categoryId) {
+      case "2b8538f0-9ffc-4982-bd15-b8fb49f67fa1":
+        return "Bebidas"
+      case "3c9649f1-0aad-4093-ae26-c9ac50a78ab2":
+        return "Porções"
+      case "4d0750f2-1bbd-5104-bf37-d0bd51b89bc3":
+        return "Diversos"
+      default:
+        return "Categoria"
+    }
+  }
+
+  const handleCloseModal = () => {
+    setShowModal(false)
+    setEditingProduct(null)
+    setImageFile(null)
+    setImagePreview("")
   }
 
   return (
@@ -249,13 +267,15 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
             Gerenciar Produtos
           </h1>
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-600 hover:to-teal-700 transition-all duration-200"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Produto
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg hover:from-emerald-600 hover:to-teal-700 transition-all duration-200"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Produto
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -286,18 +306,21 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
                   >
                     <Edit className="w-3 h-3" />
                   </button>
-                  <button
-                    onClick={() => handleDelete(product.id)}
-                    className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {product.id !== "00000000-0000-0000-0000-000000000001" && (
+                    <button
+                      onClick={() => handleDelete(product.id)}
+                      className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <h3 className="font-semibold text-white">{product.nome}</h3>
                 <p className="text-emerald-400 font-bold">R$ {product.preco.toFixed(2)}</p>
+                <p className="text-blue-400 text-sm">{getCategoryName(product.categoria_id)}</p>
                 <p className="text-gray-300 text-sm">Tempo: {product.tempo_preparo}min</p>
                 {product.descricao && <p className="text-gray-400 text-xs line-clamp-2">{product.descricao}</p>}
                 <div className="flex items-center justify-between">
@@ -379,6 +402,9 @@ export default function AdminProdutos({ onBack }: AdminProdutosProps) {
                       </option>
                       <option value="3c9649f1-0aad-4093-ae26-c9ac50a78ab2" className="bg-slate-800 text-white">
                         Porções
+                      </option>
+                      <option value="4d0750f2-1bbd-5104-bf37-d0bd51b89bc3" className="bg-slate-800 text-white">
+                        Diversos
                       </option>
                     </select>
                   </div>

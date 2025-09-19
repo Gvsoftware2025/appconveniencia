@@ -2,6 +2,7 @@ import type React from "react"
 import "./globals.css"
 import { PedidosProvider } from "@/contexts/pedidos-context"
 import { ToastProvider } from "@/components/toast-notification"
+import { GlobalPrintMonitor } from "@/components/global-print-monitor"
 
 export const metadata = {
   title: "Sistema Conveniência - Gestão de Pedidos",
@@ -18,7 +19,10 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="antialiased">
         <ToastProvider>
-          <PedidosProvider>{children}</PedidosProvider>
+          <PedidosProvider>
+            <GlobalPrintMonitor />
+            {children}
+          </PedidosProvider>
         </ToastProvider>
       </body>
     </html>

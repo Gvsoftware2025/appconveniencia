@@ -36,7 +36,7 @@ export function ModernNotification() {
         id: `notif-${Date.now()}`,
         type: "success",
         title: "Novo Pedido!",
-        message: `${order.comandaName || order.tables.join(", ")} - R$ ${order.totalPrice.toFixed(2)}`,
+        message: `${order.comandaName || "Nova Comanda"} - R$ ${order.totalPrice.toFixed(2)}`,
         duration: 5000,
       }
 
@@ -49,7 +49,7 @@ export function ModernNotification() {
         id: `ready-${Date.now()}`,
         type: "info",
         title: "Pedido Pronto!",
-        message: `${order.mesaNome} - ${order.itemName} está pronto para entrega`,
+        message: `${order.comandaNome || order.mesaNome} - ${order.itemName} está pronto para entrega`,
         duration: 8000,
       }
 
