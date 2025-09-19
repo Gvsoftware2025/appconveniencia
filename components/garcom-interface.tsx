@@ -153,19 +153,13 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
 
   const handleFinalizarPedido = async () => {
     console.log("[v0] handleFinalizarPedido chamada!")
-    console.log("[v0] Nome da comanda:", nomeComanda)
-    console.log("[v0] Produtos selecionados:", produtosSelecionados)
-    console.log("[v0] Observações:", observacoesProdutos)
-    console.log("[v0] Comanda selecionada (editing mode):", comandaSelecionada)
 
     if (!nomeComanda || !nomeComanda.trim()) {
-      console.log("[v0] Erro: Nome da comanda não informado")
       toast.error("Digite o nome da comanda!")
       return
     }
 
     if (Object.keys(produtosSelecionados).length === 0) {
-      console.log("[v0] Erro: Nenhum produto selecionado")
       toast.error("Adicione pelo menos um item ao pedido")
       return
     }
@@ -179,46 +173,35 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
         observacoes: observacoesProdutos[produtoId] || null,
       }))
 
-      console.log("[v0] Itens para adicionar com observações:", itensParaAdicionar)
-
       let comandaId
 
       if (comandaSelecionada) {
-        console.log("[v0] Editando comanda existente:", comandaSelecionada.id)
         comandaId = comandaSelecionada.id
       } else {
-        console.log("[v0] Criando nova comanda:", nomeComanda)
         comandaId = await criarComandaContext(nomeComanda?.trim() || "")
       }
 
       await adicionarItensComanda(comandaId, itensParaAdicionar)
 
-      const pedidosParaImpressao = itensParaAdicionar.map((item) => {
-        const produto = products.find((p) => p.id === item.produto_id)
-        return {
-          id: `temp-${item.produto_id}`,
-          produto_id: item.produto_id,
-          comanda_id: comandaId,
-          quantidade: item.quantidade,
-          observacoes: item.observacoes,
-          produto: produto,
-        }
-      })
-
-      console.log("[v0] Pedidos criados para impressão:", pedidosParaImpressao)
-
-      if (pedidosParaImpressao && pedidosParaImpressao.length > 0) {
-        console.log("[v0] Iniciando impressão automática...")
-        handlePrintReceipt(getOriginalComandaName(nomeComanda), pedidosParaImpressao)
-        toast.success("Pedido realizado com sucesso e comprovante impresso!")
-      } else {
-        console.log("[v0] Aviso: Nenhum pedido encontrado para impressão")
-        toast.warning("Pedido criado, mas não foi possível imprimir automaticamente")
-      }
-
       await refreshData()
 
-      // Clear selections and observations
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "new_comanda_created",
+          JSON.stringify({
+            comandaId,
+            timestamp: Date.now(),
+          }),
+        )
+
+        window.dispatchEvent(
+          new CustomEvent("newComandaCreated", {
+            detail: { comandaId },
+          }),
+        )
+      }
+
+      // Clear selections
       setProdutosSelecionados({})
       setObservacoesProdutos({})
 
@@ -226,11 +209,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
         setNomeComanda("")
       }
 
-      if (comandaSelecionada) {
-        toast.success("Itens adicionados à comanda e comprovante impresso!")
-      } else {
-      }
-
+      toast.success(comandaSelecionada ? "Itens adicionados à comanda!" : "Pedido realizado com sucesso!")
       setTelaAtual("principal")
     } catch (error) {
       console.error("[v0] Erro ao finalizar pedido:", error)

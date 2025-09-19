@@ -224,6 +224,40 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
     }
   }
 
+  const handleFecharCaixa = async () => {
+    if (!confirm("Tem certeza que deseja fechar o caixa? Isso salvará o total do dia e excluirá todo o histórico.")) {
+      return
+    }
+
+    try {
+      const totalDia = estatisticas.total
+      const dataFechamento = new Date().toLocaleDateString("pt-BR")
+
+      // Save daily total to localStorage for historical records
+      const historicoCaixa = JSON.parse(localStorage.getItem("historico_caixa") || "[]")
+      historicoCaixa.push({
+        data: dataFechamento,
+        total: totalDia,
+        transacoes: transacoes.length,
+        fechamento: new Date().toISOString(),
+      })
+      localStorage.setItem("historico_caixa", JSON.stringify(historicoCaixa))
+
+      // Clear current transactions
+      setTransacoes([])
+
+      // Show success message with daily total
+      alert(
+        `✅ CAIXA FECHADO COM SUCESSO!\n\nTotal do dia: R$ ${totalDia.toFixed(2)}\nTransações: ${estatisticas.quantidade}\nData: ${dataFechamento}\n\nO valor foi salvo no histórico e as transações foram limpas.`,
+      )
+
+      toast.success("Caixa fechado com sucesso!", `Total do dia: R$ ${totalDia.toFixed(2)}`)
+    } catch (error) {
+      console.error("Erro ao fechar caixa:", error)
+      toast.error("Erro ao fechar caixa", "Tente novamente.")
+    }
+  }
+
   if (transacaoSelecionada) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
@@ -367,6 +401,14 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
                   <p className="text-white/70">Acompanhe as vendas e transações do estabelecimento</p>
                 </div>
                 <div className="flex gap-3">
+                  <button
+                    onClick={handleFecharCaixa}
+                    disabled={transacoes.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 border border-orange-400/30 rounded-xl text-orange-400 hover:bg-orange-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    Fechar Caixa
+                  </button>
                   <button
                     onClick={handleExcluirHistorico}
                     disabled={transacoes.length === 0}

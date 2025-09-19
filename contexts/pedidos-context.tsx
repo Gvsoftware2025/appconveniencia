@@ -116,6 +116,66 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
   const supabase = createClient()
 
+  const notifyOtherTabs = (action: string, data?: any) => {
+    const message = {
+      type: "PEDIDOS_UPDATE",
+      action,
+      data,
+      timestamp: Date.now(),
+    }
+
+    // Use localStorage to communicate between tabs
+    localStorage.setItem("pedidos_sync_message", JSON.stringify(message))
+    localStorage.removeItem("pedidos_sync_message") // Trigger storage event
+
+    // Also use BroadcastChannel if available
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel("pedidos_sync")
+      channel.postMessage(message)
+      channel.close()
+    }
+  }
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "pedidos_sync_message" && e.newValue) {
+        try {
+          const message = JSON.parse(e.newValue)
+          if (message.type === "PEDIDOS_UPDATE") {
+            console.log("[v0] Received cross-tab sync message:", message.action)
+            // Force refresh when other tabs make changes
+            setTimeout(() => refreshData(), 500)
+          }
+        } catch (error) {
+          console.error("[v0] Error parsing sync message:", error)
+        }
+      }
+    }
+
+    const handleBroadcastMessage = (event: MessageEvent) => {
+      if (event.data.type === "PEDIDOS_UPDATE") {
+        console.log("[v0] Received broadcast sync message:", event.data.action)
+        setTimeout(() => refreshData(), 500)
+      }
+    }
+
+    window.addEventListener("storage", handleStorageChange)
+
+    let channel: BroadcastChannel | null = null
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel("pedidos_sync")
+      channel.addEventListener("message", handleBroadcastMessage)
+    }
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange)
+      if (channel) {
+        channel.removeEventListener("message", handleBroadcastMessage)
+        channel.close()
+      }
+    }
+  }, [])
+
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> => {
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error(`${operation} timeout after ${timeoutMs}ms`)), timeoutMs)
@@ -176,10 +236,12 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       const pedidosChanged = JSON.stringify(pedidosFormatted) !== JSON.stringify(pedidos)
 
       if (comandasChanged) {
+        console.log("[v0] Comandas updated:", comandasFormatted.length)
         setComandas(comandasFormatted || [])
       }
 
       if (pedidosChanged) {
+        console.log("[v0] Pedidos updated:", pedidosFormatted.length)
         setPedidos(pedidosFormatted || [])
       }
 
@@ -299,8 +361,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
           refreshData()
         }
       },
-      Math.min(90000 + retryCount * 30000, 300000),
-    ) // Start at 90s, increase by 30s per failure, max 5 minutes
+      15000, // 15 seconds instead of 90 seconds
+    )
 
     return () => clearInterval(refreshInterval)
   }, []) // Removed retryCount dependency to prevent interval recreation
@@ -520,6 +582,9 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
           setComandas((prev) => [...prev, retryData])
           console.log("[v0] Comanda criada com sucesso (com timestamp):", retryData)
+
+          notifyOtherTabs("COMANDA_CREATED", retryData)
+
           return retryData.id
         }
         throw error
@@ -527,6 +592,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
       setComandas((prev) => [...prev, data])
       console.log("[v0] Comanda criada com sucesso:", data)
+
+      notifyOtherTabs("COMANDA_CREATED", data)
 
       return data.id
     } catch (error) {
@@ -779,6 +846,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         if (updateError) throw updateError
 
         console.log(`[v0] Total da comanda atualizado para: R$ ${novoTotal.toFixed(2)}`)
+
+        notifyOtherTabs("ITEMS_ADDED", { comandaId, itens })
 
         await refreshData()
       }

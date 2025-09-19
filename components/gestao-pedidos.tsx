@@ -1,7 +1,11 @@
 "use client"
+
+import { useState, useEffect } from "react"
 import { usePedidos } from "@/contexts/pedidos-context"
-import { ArrowLeft, BarChart3, Clock, Settings } from "lucide-react"
+import { ArrowLeft, BarChart3, Clock, Users, Settings } from "lucide-react"
 import Image from "next/image"
+import { PrintNotification } from "@/components/print-notification"
+import { usePrintStatus } from "@/hooks/use-print-status"
 
 interface GestaoPedidosProps {
   onBack: () => void
@@ -9,10 +13,94 @@ interface GestaoPedidosProps {
 }
 
 export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedidosProps) {
-  const { pedidos, comandas, getPedidosByComanda, calcularTotalComanda } = usePedidos()
+  const { pedidos, comandas, getPedidosByComanda, calcularTotalComanda, refreshData } = usePedidos()
+  const { markAsPrinted } = usePrintStatus()
+  const [filtroStatus, setFiltroStatus] = useState("todos")
+
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log("[v0] Window focused, refreshing gestao data...")
+      refreshData()
+    }
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("[v0] Tab became visible, refreshing gestao data...")
+        refreshData()
+      }
+    }
+
+    window.addEventListener("focus", handleFocus)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener("focus", handleFocus)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [refreshData])
+
+  const handleAutoPrint = (comanda: any) => {
+    const pedidosComanda = pedidos?.filter((pedido) => pedido.comanda_id === comanda.id) || []
+
+    const printContent = `
+      CONVENIÊNCIA
+      =====================================
+      
+      COMANDA: ${comanda.numero_comanda}
+      DATA: ${new Date().toLocaleDateString("pt-BR")}
+      HORA: ${new Date().toLocaleTimeString("pt-BR")}
+      
+      =====================================
+      ITENS:
+      =====================================
+      
+      ${pedidosComanda
+        .map((pedido) => {
+          const nome = pedido.produto?.nome || "Produto não encontrado"
+          const preco = (pedido.preco_unitario || 0).toFixed(2)
+          const quantidade = pedido.quantidade
+          const subtotal = (pedido.subtotal || 0).toFixed(2)
+          const obs = pedido.observacoes ? `\n    Obs: ${pedido.observacoes}` : ""
+
+          return `${nome} x${quantidade}\n    R$ ${preco} cada = R$ ${subtotal}${obs}`
+        })
+        .join("\n\n")}
+      
+      =====================================
+      
+      TOTAL: R$ ${comanda.total?.toFixed(2) || "0.00"}
+      
+      =====================================
+      
+      Obrigado pela preferência!
+    `
+
+    const printWindow = window.open("", "_blank")
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Comanda - ${comanda.numero_comanda}</title>
+            <style>
+              body { font-family: monospace; white-space: pre-line; margin: 20px; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>${printContent}</body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+      markAsPrinted(comanda.id)
+    }
+  }
+
   const totalComandas = (comandas || []).length
   const comandasAtivas = (comandas || []).filter((c) => c.status === "aberta").length
-  const todasComandas = comandas || []
+  const comandasComPedidos = (comandas || []).filter((c) => {
+    const pedidosDaComanda = getPedidosByComanda(c.id)
+    return pedidosDaComanda.length > 0
+  }).length
 
   const getComandaStatus = (comandaId: string) => {
     const pedidosDaComanda = getPedidosByComanda(comandaId)
@@ -33,6 +121,44 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
     return "preparando"
   }
 
+  const comandasFiltradas =
+    filtroStatus === "todos"
+      ? comandas || []
+      : (comandas || []).filter((c) => {
+          const status = getComandaStatus(c.id)
+          return status === filtroStatus
+        })
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "preparando":
+        return "text-blue-400 bg-blue-500/20 border-blue-400/30"
+      case "pronto":
+        return "text-green-400 bg-green-500/20 border-green-400/30"
+      case "entregue":
+        return "text-purple-400 bg-purple-500/20 border-purple-400/30"
+      case "sem_pedidos":
+        return "text-gray-400 bg-gray-500/20 border-gray-400/30"
+      default:
+        return "text-white/60 bg-white/10 border-white/20"
+    }
+  }
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "preparando":
+        return "Preparando"
+      case "pronto":
+        return "Pronto"
+      case "entregue":
+        return "Entregue"
+      case "sem_pedidos":
+        return "Sem Pedidos"
+      default:
+        return "Indefinido"
+    }
+  }
+
   if (!pedidos || !comandas) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -43,6 +169,11 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+      <PrintNotification
+        comandas={comandasAtivas ? (comandas || []).filter((c) => c.status === "aberta") : []}
+        onPrintComanda={handleAutoPrint}
+      />
+
       <div className="absolute inset-0">
         <Image src="/restaurant-background.png" alt="Restaurant Background" fill className="object-cover opacity-20" />
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 via-purple-900/80 to-slate-900/80" />
@@ -85,7 +216,7 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
         </header>
 
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-2">
                 <BarChart3 className="w-8 h-8 text-blue-400" />
@@ -105,14 +236,50 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                 </div>
               </div>
             </div>
+
+            <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Users className="w-8 h-8 text-green-400" />
+                <div>
+                  <p className="text-2xl font-bold text-white">{comandasComPedidos}</p>
+                  <p className="text-white/60 text-sm">Comandas com Pedidos</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6 mb-6">
+            <h2 className="text-xl font-bold text-white mb-4">Filtrar Comandas</h2>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { id: "todos", label: "Todos" },
+                { id: "preparando", label: "Em Preparo" },
+                { id: "pronto", label: "Prontos" },
+                { id: "entregue", label: "Entregues" },
+                { id: "sem_pedidos", label: "Sem Pedidos" },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setFiltroStatus(id)}
+                  className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ${
+                    filtroStatus === id
+                      ? "bg-emerald-500/20 border border-emerald-400/50 text-emerald-400"
+                      : "backdrop-blur-xl bg-white/5 border border-white/20 text-white hover:bg-white/10"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-6">
             <h2 className="text-xl font-bold text-white mb-4">Lista de Comandas</h2>
 
             <div className="space-y-4">
-              {todasComandas.map((comanda) => {
+              {comandasFiltradas.map((comanda) => {
                 const pedidosDaComanda = getPedidosByComanda(comanda.id)
+                const statusComanda = getComandaStatus(comanda.id)
                 const totalComanda = calcularTotalComanda(comanda.id)
 
                 return (
@@ -121,6 +288,11 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-white font-bold">Comanda: {comanda.numero_comanda}</span>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(statusComanda)}`}
+                          >
+                            {getStatusLabel(statusComanda)}
+                          </span>
                         </div>
                         <div className="text-white/80 text-sm">
                           {pedidosDaComanda.length > 0 ? (
@@ -144,7 +316,7 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
                 )
               })}
 
-              {todasComandas.length === 0 && (
+              {comandasFiltradas.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-white/60 text-lg">Nenhuma comanda encontrada</p>
                 </div>

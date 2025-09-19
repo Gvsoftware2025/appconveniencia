@@ -8,6 +8,8 @@ import { usePedidos } from "@/contexts/pedidos-context"
 import { toast } from "sonner"
 import Image from "next/image"
 import { Banknote, Smartphone, Check, BarChart3 } from "lucide-react"
+import { PrintNotification } from "@/components/print-notification"
+import { usePrintStatus } from "@/hooks/use-print-status"
 import RelatoriosPagamento from "./relatorios-pagamento"
 
 interface PagamentoInterfaceProps {
@@ -30,6 +32,14 @@ interface DivisaoConta {
   itensIndividuais: ItemPagamento[]
 }
 
+// Define ItemPago interface
+interface ItemPago {
+  pedidoId: string
+  produtoNome: string
+  precoUnitario: number
+  quantidadePaga: number
+}
+
 export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfaceProps) {
   const {
     comandas,
@@ -40,9 +50,12 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     updateComandaTotal,
     addPedido,
     refreshData,
+    products, // Assuming products are available from context or fetched elsewhere
   } = usePedidos()
 
-  const [metodoPagamento, setMetodoPagamento] = useState("")
+  const { markAsPrinted, isPrinted } = usePrintStatus()
+
+  const [metodoPagamento, setMetodoPagamento] = useState<"dinheiro" | "cartao" | "pix">("dinheiro")
   const [processando, setProcessando] = useState(false)
   const [contaFechada, setContaFechada] = useState(false)
   const [comandaSelecionada, setComandaSelecionada] = useState<any>(null)
@@ -58,7 +71,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     valorPorPessoa: 0,
     itensIndividuais: [],
   })
-  const [itensPagos, setItensPagos] = useState<ItemPagamento[]>([])
+  const [itensPagos, setItensPagos] = useState<ItemPago[]>([])
   const [subModoParcial, setSubModoParcial] = useState<"valor" | "itens">("valor")
   const [mostrarRelatorios, setMostrarRelatorios] = useState(false)
   const [mostrarModalDiversos, setMostrarModalDiversos] = useState(false)
@@ -71,6 +84,10 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   const [nomeItemDiverso, setNomeItemDiverso] = useState("")
   const [precoItemDiverso, setPrecoItemDiverso] = useState(0)
   const [observacaoItemDiverso, setObservacaoItemDiverso] = useState("")
+
+  const [previousComandasCount, setPreviousComandasCount] = useState(0)
+  // The mesaId prop is already handled, so this local state is redundant.
+  // const [mesaId, setMesaId] = useState<string>("")
 
   const supabase = createClient()
 
@@ -90,6 +107,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   }
 
   useEffect(() => {
+    // Use the mesaId prop directly
     if (mesaId && comandas) {
       const comanda = comandas.find((c) => c.numero_comanda === mesaId || c.id === mesaId)
       if (comanda) {
@@ -97,6 +115,32 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
       }
     }
   }, [mesaId, comandas])
+
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log("[v0] Window focused, refreshing payment data...")
+      refreshData()
+    }
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("[v0] Tab became visible, refreshing payment data...")
+        refreshData()
+      }
+    }
+
+    window.addEventListener("focus", handleFocus)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener("focus", handleFocus)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [refreshData])
+
+  useEffect(() => {
+    console.log("[v0] Pagamento Interface: Auto-print desabilitado - use sistema de notificações")
+  }, [])
 
   const pedidosDaComandaSelecionada = useMemo(() => {
     if (!comandaSelecionada) return []
@@ -188,7 +232,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   const handleComandaChange = (comanda: any) => {
     setComandaSelecionada(comanda)
     setModoPagamento("total")
-    setMetodoPagamento("")
+    setMetodoPagamento("dinheiro") // Default to dinheiro
     setValorPago("")
     setValorPagamentoParcial("")
     setMostrarTroco(false)
@@ -269,136 +313,421 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     }
   }
 
+  const handleAutoPrint = (comanda: any) => {
+    const pedidosComanda = pedidos?.filter((pedido) => pedido.comanda_id === comanda.id) || []
+
+    const printContent = `
+      CONVENIÊNCIA
+      =====================================
+      
+      COMANDA: ${comanda.numero_comanda}
+      DATA: ${new Date().toLocaleDateString("pt-BR")}
+      HORA: ${new Date().toLocaleTimeString("pt-BR")}
+      
+      =====================================
+      ITENS:
+      =====================================
+      
+      ${pedidosComanda
+        .map((pedido) => {
+          const nome = pedido.produto?.nome || "Produto não encontrado"
+          const preco = (pedido.preco_unitario || 0).toFixed(2)
+          const quantidade = pedido.quantidade
+          const subtotal = (pedido.subtotal || 0).toFixed(2)
+          const obs = pedido.observacoes ? `\n    Obs: ${pedido.observacoes}` : ""
+
+          return `${nome} x${quantidade}\n    R$ ${preco} cada = R$ ${subtotal}${obs}`
+        })
+        .join("\n\n")}
+      
+      =====================================
+      
+      TOTAL: R$ ${comanda.total?.toFixed(2) || "0.00"}
+      
+      =====================================
+      
+      Obrigado pela preferência!
+    `
+
+    const printWindow = window.open("", "_blank")
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Comanda - ${comanda.numero_comanda}</title>
+            <style>
+              body { font-family: monospace; white-space: pre-line; margin: 20px; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>${printContent}</body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+      markAsPrinted(comanda.id)
+    }
+  }
+
   const handleImprimir = () => {
     if (!comandaSelecionada) return
 
-    const pedidosDaComanda = pedidos.filter((pedido) => pedido.comanda_id === comandaSelecionada.id)
-    const total = pedidosDaComanda.reduce((sum, pedido) => sum + (pedido.subtotal || 0), 0)
+    const pedidosComanda = pedidos?.filter((pedido) => pedido.comanda_id === comandaSelecionada.id) || []
+
+    if (pedidosComanda.length > 0) {
+      const pedidosParaImprimir = pedidosComanda.map((pedido) => {
+        const produto = products.find((p) => p.id === pedido.produto_id)
+        return {
+          ...pedido,
+          produto: produto || {
+            id: pedido.produto_id,
+            nome: "Produto não encontrado",
+            preco: pedido.preco_unitario || 0,
+            categoria_id: "",
+          },
+        }
+      })
+
+      handleManualPrint(comandaSelecionada.numero_comanda, pedidosParaImprimir, comandaSelecionada.id)
+    }
+  }
+
+  const handleManualPrint = (nomeComanda: string, pedidosParaImprimir: any[], comandaId: string) => {
+    console.log("[v0] Pagamento Interface: Iniciando impressão manual para:", nomeComanda)
+
+    const total = pedidosParaImprimir.reduce((sum, pedido) => {
+      return sum + pedido.produto.preco * pedido.quantidade
+    }, 0)
 
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Comprovante - ${comandaSelecionada.numero_comanda}</title>
+        <title>Comprovante - ${nomeComanda}</title>
         <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
-            font-family: 'Courier New', monospace; 
-            font-size: 12px; 
-            line-height: 1.4; 
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px; 
+            line-height: 1.6; 
             margin: 0; 
             padding: 20px;
-            max-width: 300px;
+            max-width: 380px;
+            background: #ffffff;
+            color: #1f2937;
+            -webkit-font-smoothing: antialiased;
+          }
+          .receipt-container {
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 24px;
+            background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
           }
           .header { 
             text-align: center; 
-            border-bottom: 2px solid #000; 
-            padding-bottom: 10px; 
-            margin-bottom: 15px; 
+            border-bottom: 3px solid #6366f1; 
+            padding-bottom: 16px; 
+            margin-bottom: 24px; 
+          }
+          .logo {
+            font-size: 24px;
+            font-weight: 900;
+            color: #6366f1;
+            letter-spacing: 1.5px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+          }
+          .comanda-info {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 24px;
+            font-weight: 700;
+            font-size: 16px;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+          }
+          .datetime {
+            font-size: 12px;
+            color: #6b7280;
+            text-align: center;
+            margin-bottom: 24px;
+            font-weight: 500;
+          }
+          .items-section {
+            margin-bottom: 24px;
+          }
+          .section-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #374151;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .section-title::before {
+            content: "🍽️";
+            font-size: 16px;
           }
           .item { 
             display: flex; 
             justify-content: space-between; 
-            margin-bottom: 5px; 
-            border-bottom: 1px dotted #ccc;
-            padding-bottom: 3px;
+            align-items: flex-start;
+            margin-bottom: 16px; 
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 4px solid #6366f1;
+            transition: all 0.2s ease;
+          }
+          .item-details {
+            flex: 1;
+          }
+          .item-name {
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 4px;
+            font-size: 15px;
+          }
+          .item-qty {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 600;
+            background: #e0e7ff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+          }
+          .item-obs {
+            font-size: 11px;
+            color: #dc2626;
+            font-style: italic;
+            margin-top: 6px;
+            padding: 6px 10px;
+            background: #fef2f2;
+            border-radius: 6px;
+            border: 1px solid #fecaca;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
+          .item-obs::before {
+            content: "📝";
+            font-size: 12px;
+          }
+          .item-price {
+            font-weight: 800;
+            color: #059669;
+            font-size: 15px;
+            background: #ecfdf5;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #a7f3d0;
+          }
+          .total-section { 
+            border-top: 3px solid #e5e7eb; 
+            padding-top: 20px; 
+            margin-top: 24px; 
+          }
+          .subtotal {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 600;
           }
           .total { 
-            border-top: 2px solid #000; 
-            padding-top: 10px; 
-            margin-top: 15px; 
-            font-weight: bold; 
-            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            font-weight: 900; 
+            font-size: 18px;
+            color: #1f2937;
+            padding: 16px;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 8px;
+            border: 2px solid #0ea5e9;
+            box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.2);
           }
           .footer { 
             text-align: center; 
-            margin-top: 20px; 
-            font-size: 10px; 
+            margin-top: 28px; 
+            padding-top: 20px;
+            border-top: 2px dashed #d1d5db;
           }
-          .status {
-            text-align: center;
-            margin: 15px 0;
-            padding: 8px;
-            background-color: #f0f0f0;
-            border-radius: 5px;
-            font-weight: bold;
+          .thank-you {
+            font-size: 16px;
+            font-weight: 700;
+            color: #6366f1;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
           }
-          .paid { background-color: #d4edda; color: #155724; }
-          .unpaid { background-color: #f8d7da; color: #721c24; }
+          .thank-you::before {
+            content: "🙏";
+            font-size: 18px;
+          }
+          .system-info {
+            font-size: 11px;
+            color: #9ca3af;
+            line-height: 1.4;
+          }
           @media print {
-            body { margin: 0; padding: 10px; }
+            body { 
+              margin: 0; 
+              padding: 15px; 
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .receipt-container {
+              border: 1px solid #e5e7eb;
+              padding: 20px;
+              background: white;
+              box-shadow: none;
+            }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>CONVENIÊNCIA RIVES</h2>
-          <p>Comanda: ${comandaSelecionada.numero_comanda}</p>
-          <p>${new Date().toLocaleString("pt-BR")}</p>
-        </div>
-        
-        <div class="status ${comandaSelecionada.total <= 0 ? "paid" : "unpaid"}">
-          ${comandaSelecionada.total <= 0 ? "✓ CONTA TOTALMENTE PAGA" : `⚠ PENDENTE: R$ ${comandaSelecionada.total.toFixed(2)}`}
-        </div>
-        
-        <div class="items">
-          ${pedidosDaComanda
-            .map(
-              (pedido) => `
-            <div class="item">
-              <div>
-                <div>${pedido.quantidade}x ${pedido.produto?.nome || "Produto não encontrado"}</div>
-                ${pedido.observacoes ? `<div style="font-size: 10px; color: #666;">Obs: ${pedido.observacoes}</div>` : ""}
+        <div class="receipt-container">
+          <div class="header">
+            <div class="logo">Conveniência Rives</div>
+          </div>
+          
+          <div class="comanda-info">
+            Comanda: ${nomeComanda}
+          </div>
+          
+          <div class="datetime">
+            📅 ${new Date().toLocaleString("pt-BR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </div>
+          
+          <div class="items-section">
+            <div class="section-title">Itens do Pedido</div>
+            ${pedidosParaImprimir
+              .map(
+                (pedido) => `
+              <div class="item">
+                <div class="item-details">
+                  <div class="item-name">${pedido.produto.nome}</div>
+                  <div class="item-qty">${pedido.quantidade}x unidade</div>
+                  ${pedido.observacoes ? `<div class="item-obs">${pedido.observacoes}</div>` : ""}
+                </div>
+                <div class="item-price">R$ ${(pedido.produto.preco * pedido.quantidade).toFixed(2)}</div>
               </div>
-              <div>R$ ${(pedido.subtotal || 0).toFixed(2)}</div>
+            `,
+              )
+              .join("")}
+          </div>
+          
+          <div class="total-section">
+            <div class="subtotal">
+              <span>Subtotal:</span>
+              <span>R$ ${total.toFixed(2)}</span>
             </div>
-          `,
-            )
-            .join("")}
-        </div>
-        
-        <div class="total">
-          <div style="display: flex; justify-content: space-between;">
-            <span>TOTAL ORIGINAL:</span>
-            <span>R$ ${total.toFixed(2)}</span>
+            <div class="total">
+              <span>💰 TOTAL GERAL</span>
+              <span>R$ ${total.toFixed(2)}</span>
+            </div>
           </div>
-          ${
-            comandaSelecionada.total !== total
-              ? `
-          <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-            <span>VALOR RESTANTE:</span>
-            <span>R$ ${comandaSelecionada.total.toFixed(2)}</span>
+          
+          <div class="footer">
+            <div class="thank-you">Obrigado pela preferência!</div>
+            <div class="system-info">
+              ${new Date().toLocaleString("pt-BR")}
+            </div>
           </div>
-          `
-              : ""
-          }
-        </div>
-        
-        <div class="footer">
-          <p>Obrigado pela preferência!</p>
-          <p>Gerado pelo sistema em ${new Date().toLocaleString("pt-BR")}</p>
         </div>
         
         <script>
-          window.onload = function() {
-            setTimeout(function() {
+          console.log("[v0] Manual print: Página carregada");
+          
+          function attemptPrint() {
+            try {
+              console.log("[v0] Manual print: Tentando imprimir");
               window.print();
-            }, 100);
+              
+              setTimeout(function() {
+                console.log("[v0] Manual print: Fechando janela");
+                window.close();
+              }, 2000);
+            } catch (error) {
+              console.error("[v0] Manual print: Erro na impressão:", error);
+              setTimeout(function() {
+                window.close();
+              }, 1000);
+            }
+          }
+          
+          window.onload = function() {
+            setTimeout(attemptPrint, 300);
+          }
+          
+          document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(attemptPrint, 500);
+          });
+          
+          window.onbeforeprint = function() {
+            console.log("[v0] Manual print: Preparando para imprimir");
+          }
+          
+          window.onafterprint = function() {
+            console.log("[v0] Manual print: Impressão concluída");
+            setTimeout(function() {
+              window.close();
+            }, 1000);
           }
         </script>
       </body>
       </html>
     `
 
-    const printWindow = window.open("", "_blank")
-    if (printWindow) {
-      printWindow.document.write(receiptHTML)
-      printWindow.document.close()
+    try {
+      const windowFeatures =
+        "width=450,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no"
+
+      const printWindow = window.open("", "_blank", windowFeatures)
+
+      if (printWindow && !printWindow.closed) {
+        printWindow.document.write(receiptHTML)
+        printWindow.document.close()
+        printWindow.focus()
+        console.log("[v0] Pagamento Interface: Janela de impressão aberta com sucesso")
+
+        setTimeout(() => {
+          try {
+            printWindow.print()
+          } catch (e) {
+            console.log("[v0] Failed to trigger print:", e)
+          }
+        }, 1000)
+      } else {
+        alert(
+          `⚠️ POPUP BLOQUEADO!\n\nO navegador bloqueou a janela de impressão.\n\nComanda: ${nomeComanda}\n\nPor favor, permita popups para este site.`,
+        )
+      }
+    } catch (error) {
+      console.error("[v0] Pagamento Interface: Erro na impressão:", error)
+      alert(`❌ ERRO NA IMPRESSÃO!\n\nComanda: ${nomeComanda}\n\nErro: ${error.message}`)
     }
   }
 
   const handleFecharConta = async () => {
-    if (!comandaSelecionada) return
+    if (!metodoPagamento || !comandaSelecionada) return
 
     if (metodoPagamento === "dinheiro") {
       const troco = calcularTroco()
@@ -419,19 +748,18 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     setProcessando(true)
 
     try {
-      if (modoPagamento === "total" || !metodoPagamento) {
+      if (modoPagamento === "total") {
         await finalizarComanda(comandaSelecionada.id)
       } else if (modoPagamento === "parcial") {
         if (subModoParcial === "valor") {
           const valorPagoNum = Number.parseFloat(valorPagamentoParcial) || 0
           if (valorPagoNum > 0) {
-            const novoItemPago: ItemPagamento = {
+            const novoItemPago: ItemPago = {
+              // Use ItemPago interface
               pedidoId: `pagamento-parcial-${Date.now()}`,
               produtoNome: "Pagamento Parcial",
               precoUnitario: valorPagoNum,
-              quantidadeTotal: 1,
-              quantidadePaga: 1,
-              quantidadeRestante: 0,
+              quantidadePaga: 1, // Assuming one entry for the partial payment value
             }
 
             setItensPagos((prev) => [...prev, novoItemPago])
@@ -465,9 +793,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                 pedidoId: pedidoId,
                 produtoNome: pedido?.produto?.nome || "Produto não encontrado",
                 precoUnitario: pedido?.preco_unitario || 0,
-                quantidadeTotal: quantidade,
                 quantidadePaga: quantidade,
-                quantidadeRestante: 0,
               }
             })
 
@@ -499,7 +825,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
           )
         }
 
-        setMetodoPagamento("")
+        setMetodoPagamento("dinheiro") // Reset to default
         setValorPago("")
         setValorPagamentoParcial("")
         setMostrarTroco(false)
@@ -515,7 +841,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
       setTimeout(() => {
         setComandaSelecionada(null)
-        setMetodoPagamento("")
+        setMetodoPagamento("dinheiro") // Reset to default
         setValorPago("")
         setMostrarTroco(false)
         setContaFechada(false)
@@ -532,7 +858,8 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
     }
   }
 
-  const handleMetodoPagamento = (metodo: string) => {
+  const handleMetodoPagamento = (metodo: "dinheiro" | "cartao" | "pix") => {
+    // Typed metodoPagamento
     setMetodoPagamento(metodo)
     if (metodo === "dinheiro") {
       setMostrarTroco(true)
@@ -624,11 +951,8 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
-      <div className="absolute inset-0">
-        <Image src="/restaurant-interior.png" alt="Restaurant Background" fill className="object-cover opacity-20" />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 via-purple-900/80 to-slate-900/80" />
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 text-white">
+      <PrintNotification comandas={comandasAbertas} onPrintComanda={handleAutoPrint} />
 
       <div className="relative z-10">
         <header className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/5 border-b border-white/10">
@@ -1132,7 +1456,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                     ].map(({ id, label, icon: Icon }) => (
                       <button
                         key={id}
-                        onClick={() => handleMetodoPagamento(id)}
+                        onClick={() => handleMetodoPagamento(id as any)} // Cast to any for now
                         className={`p-4 backdrop-blur-xl border rounded-xl transition-all duration-300 flex flex-col items-center gap-2 ${metodoPagamento === id ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-400" : "bg-white/5 border-white/20 text-white hover:bg-white/10"}`}
                       >
                         <Icon className="w-6 h-6" />
@@ -1188,6 +1512,7 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
                 <button
                   onClick={handleFecharConta}
                   disabled={
+                    !metodoPagamento ||
                     processando ||
                     (metodoPagamento === "dinheiro" && calcularTroco() < 0) ||
                     (modoPagamento === "parcial" &&

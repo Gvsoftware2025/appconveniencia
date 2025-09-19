@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useInterface } from "@/contexts/interface-context"
 import { motion } from "framer-motion"
 import { Users, ClipboardList, CreditCard, Settings } from "lucide-react"
 import GarcomInterface from "@/components/garcom-interface"
@@ -11,8 +12,13 @@ import PasswordProtection from "@/components/password-protection"
 
 export default function HomePage() {
   const [activeInterface, setActiveInterface] = useState<string | null>(null)
+  const { setActiveInterface: setGlobalActiveInterface } = useInterface()
   const [showPasswordScreen, setShowPasswordScreen] = useState<string | null>(null)
   const [mainPasswordEntered, setMainPasswordEntered] = useState(false)
+
+  useEffect(() => {
+    setGlobalActiveInterface(activeInterface)
+  }, [activeInterface, setGlobalActiveInterface])
 
   useEffect(() => {
     console.log("[v0] HomePage: Component mounted")
@@ -102,7 +108,7 @@ export default function HomePage() {
       pagamento: <PagamentoInterface onBack={() => setActiveInterface(null)} />,
       admin: <AdminProdutos onBack={() => setActiveInterface(null)} />,
     }
-    return interfaces[activeInterface as keyof typeof interfaces]
+    return <div className="relative">{interfaces[activeInterface as keyof typeof interfaces]}</div>
   }
 
   console.log("[v0] HomePage: Showing main menu")
