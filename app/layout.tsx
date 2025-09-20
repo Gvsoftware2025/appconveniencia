@@ -4,6 +4,7 @@ import { PedidosProvider } from "@/contexts/pedidos-context"
 import { InterfaceProvider } from "@/contexts/interface-context"
 import { ToastProvider } from "@/components/toast-notification"
 import GlobalPrintMonitor from "@/components/global-print-monitor"
+import { DeveloperModeProvider } from "@/contexts/developer-mode-context"
 
 export const metadata = {
   title: "Sistema Conveniência - Gestão de Pedidos",
@@ -20,12 +21,14 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="antialiased">
         <ToastProvider>
-          <PedidosProvider>
-            <InterfaceProvider>
-              <GlobalPrintMonitor />
-              {children}
-            </InterfaceProvider>
-          </PedidosProvider>
+          <DeveloperModeProvider>
+            <PedidosProvider>
+              <InterfaceProvider>
+                <GlobalPrintMonitor />
+                {children}
+              </InterfaceProvider>
+            </PedidosProvider>
+          </DeveloperModeProvider>
         </ToastProvider>
       </body>
     </html>
