@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { useDevDatabase } from "@/contexts/developer-mode-context"
 
 const generateUUID = () => {
   if (typeof globalThis !== "undefined" && globalThis.crypto && globalThis.crypto.randomUUID) {
@@ -116,14 +115,8 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
   const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState<number>(Date.now())
 
   const supabase = createClient()
-  const { isDeveloperMode, mockData, setMockData, interceptedOperation } = useDevDatabase()
 
   const notifyOtherTabs = (action: string, data?: any) => {
-    if (isDeveloperMode) {
-      console.log(`[v0] DEV MODE: Skipping cross-tab notification for ${action}`)
-      return
-    }
-
     const message = {
       type: "PEDIDOS_UPDATE",
       action,
@@ -200,13 +193,6 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshData = async () => {
-    if (isDeveloperMode) {
-      console.log("[v0] DEV MODE: Using mock data for refresh")
-      setComandas(mockData.comandas)
-      setPedidos(mockData.pedidos)
-      return
-    }
-
     if (isRefreshing) {
       return
     }
@@ -288,16 +274,6 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       try {
         setIsLoading(true)
 
-        if (isDeveloperMode) {
-          console.log("[v0] DEV MODE: Loading mock data")
-          setMesas(mockData.mesas || [])
-          setProducts(mockData.produtos || [])
-          setComandas(mockData.comandas || [])
-          setPedidos(mockData.pedidos || [])
-          setIsLoading(false)
-          return
-        }
-
         const mesasPromise = supabase.from("mesas").select("*")
         const productsPromise = supabase.from("produtos").select("*")
         const comandasPromise = supabase.from("comandas").select("*").eq("status", "aberta")
@@ -370,11 +346,6 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
     loadData()
 
-    if (isDeveloperMode) {
-      console.log("[v0] DEV MODE: Skipping refresh interval")
-      return
-    }
-
     const refreshInterval = setInterval(
       () => {
         if (!isRefreshing) {
@@ -394,31 +365,25 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     )
 
     return () => clearInterval(refreshInterval)
-  }, [isDeveloperMode, mockData]) // Add dependencies for developer mode
+  }, []) // Add dependencies for developer mode
 
   const addProduct = async (productData: Omit<Product, "id">) => {
-    return interceptedOperation(
-      async () => {
-        try {
-          await ensureCategoryExists(productData.categoria_id)
+    try {
+      await ensureCategoryExists(productData.categoria_id)
 
-          const { data, error } = await supabase.from("produtos").insert([productData]).select()
+      const { data, error } = await supabase.from("produtos").insert([productData]).select()
 
-          if (error) throw error
+      if (error) throw error
 
-          // Get the first item from the array response
-          const newProduct = Array.isArray(data) ? data[0] : data
-          if (newProduct) {
-            setProducts((prev) => [...prev, newProduct])
-          }
-        } catch (error) {
-          console.error("[v0] Erro ao adicionar produto:", error)
-          throw error
-        }
-      },
-      undefined, // No specific mock result
-      "Add Product",
-    )
+      // Get the first item from the array response
+      const newProduct = Array.isArray(data) ? data[0] : data
+      if (newProduct) {
+        setProducts((prev) => [...prev, newProduct])
+      }
+    } catch (error) {
+      console.error("[v0] Erro ao adicionar produto:", error)
+      throw error
+    }
   }
 
   const ensureCategoryExists = async (categoriaId: string) => {
@@ -577,16 +542,32 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
   }
 
   const criarComanda = async (nomeComanda: string): Promise<string> => {
-    return interceptedOperation(
-      async () => {
-        try {
-          const numeroComanda = nomeComanda?.trim() || `CMD${Date.now()}`
+    try {
+      const numeroComanda = nomeComanda?.trim() || `CMD${Date.now()}`
 
-          const { data, error } = await supabase
+      const { data, error } = await supabase
+        .from("comandas")
+        .insert([
+          {
+            numero_comanda: numeroComanda,
+            tipo: "individual",
+            status: "aberta",
+            total: 0,
+            desconto: 0,
+            taxa_servico: 0,
+          },
+        ])
+        .select()
+        .single()
+
+      if (error) {
+        if (error.code === "23505") {
+          const uniqueNumeroComanda = `${numeroComanda}-${Date.now()}`
+          const { data: retryData, error: retryError } = await supabase
             .from("comandas")
             .insert([
               {
-                numero_comanda: numeroComanda,
+                numero_comanda: uniqueNumeroComanda,
                 tipo: "individual",
                 status: "aberta",
                 total: 0,
@@ -597,66 +578,28 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
             .select()
             .single()
 
-          if (error) {
-            if (error.code === "23505") {
-              const uniqueNumeroComanda = `${numeroComanda}-${Date.now()}`
-              const { data: retryData, error: retryError } = await supabase
-                .from("comandas")
-                .insert([
-                  {
-                    numero_comanda: uniqueNumeroComanda,
-                    tipo: "individual",
-                    status: "aberta",
-                    total: 0,
-                    desconto: 0,
-                    taxa_servico: 0,
-                  },
-                ])
-                .select()
-                .single()
+          if (retryError) throw retryError
 
-              if (retryError) throw retryError
+          setComandas((prev) => [...prev, retryData])
+          console.log("[v0] Comanda criada com sucesso (com timestamp):", retryData)
 
-              setComandas((prev) => [...prev, retryData])
-              console.log("[v0] Comanda criada com sucesso (com timestamp):", retryData)
+          notifyOtherTabs("COMANDA_CREATED", retryData)
 
-              notifyOtherTabs("COMANDA_CREATED", retryData)
-
-              return retryData.id
-            }
-            throw error
-          }
-
-          setComandas((prev) => [...prev, data])
-          console.log("[v0] Comanda criada com sucesso:", data)
-
-          notifyOtherTabs("COMANDA_CREATED", data)
-
-          return data.id
-        } catch (error) {
-          console.error("[v0] Erro ao criar comanda:", error)
-          throw error
+          return retryData.id
         }
-      },
-      (() => {
-        const mockComanda = {
-          id: generateUUID(),
-          numero_comanda: nomeComanda?.trim() || `CMD${Date.now()}`,
-          tipo: "individual" as const,
-          status: "aberta" as const,
-          total: 0,
-          desconto: 0,
-          taxa_servico: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-        setComandas((prev) => [...prev, mockComanda])
-        setMockData({ comandas: [...mockData.comandas, mockComanda] })
-        console.log("[v0] DEV MODE: Mock comanda created:", mockComanda)
-        return mockComanda.id
-      })(),
-      "Create Comanda",
-    )
+        throw error
+      }
+
+      setComandas((prev) => [...prev, data])
+      console.log("[v0] Comanda criada com sucesso:", data)
+
+      notifyOtherTabs("COMANDA_CREATED", data)
+
+      return data.id
+    } catch (error) {
+      console.error("[v0] Erro ao criar comanda:", error)
+      throw error
+    }
   }
 
   const updateComanda = async (comandaId: string, updates: Partial<Comanda>) => {
@@ -811,114 +754,75 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
     comandaId: string,
     itens: Array<{ produto_id: string; quantidade: number; observacoes?: string }>,
   ) => {
-    return interceptedOperation(
-      async () => {
-        // Get existing pedidos for this comanda
-        const { data: existingPedidos, error: fetchError } = await supabase
-          .from("pedidos")
-          .select("*")
-          .eq("comanda_id", comandaId)
-          .or("status.is.null,status.neq.entregue")
+    // Get existing pedidos for this comanda
+    const { data: existingPedidos, error: fetchError } = await supabase
+      .from("pedidos")
+      .select("*")
+      .eq("comanda_id", comandaId)
+      .or("status.is.null,status.neq.entregue")
 
-        if (fetchError) throw fetchError
+    if (fetchError) throw fetchError
 
-        const pedidosToInsert = []
+    const pedidosToInsert = []
 
-        for (const item of itens) {
-          const produto = products.find((p) => p.id === item.produto_id)
-          if (!produto) continue
+    for (const item of itens) {
+      const produto = products.find((p) => p.id === item.produto_id)
+      if (!produto) continue
 
-          const itemObservacoes = item.observacoes?.trim() || null
+      const itemObservacoes = item.observacoes?.trim() || null
 
-          // Determine status based on product category - only portions need status
-          const isPorcao =
-            produto.nome.toLowerCase().includes("porção") ||
-            produto.nome.toLowerCase().includes("porcao") ||
-            produto.nome.toLowerCase().includes("batata") ||
-            produto.nome.toLowerCase().includes("frango") ||
-            produto.nome.toLowerCase().includes("pastel") ||
-            produto.nome.toLowerCase().includes("mandioca")
+      // Determine status based on product category - only portions need status
+      const isPorcao =
+        produto.nome.toLowerCase().includes("porção") ||
+        produto.nome.toLowerCase().includes("porcao") ||
+        produto.nome.toLowerCase().includes("batata") ||
+        produto.nome.toLowerCase().includes("frango") ||
+        produto.nome.toLowerCase().includes("pastel") ||
+        produto.nome.toLowerCase().includes("mandioca")
 
-          const itemStatus = isPorcao ? "preparando" : null
+      const itemStatus = isPorcao ? "preparando" : null
 
-          // Always create new pedidos - no more merging with existing ones
-          pedidosToInsert.push({
-            comanda_id: comandaId,
-            produto_id: item.produto_id,
-            quantidade: item.quantidade,
-            preco_unitario: produto.preco,
-            subtotal: produto.preco * item.quantidade,
-            observacoes: itemObservacoes,
-            status: itemStatus,
-            tempo_pedido: new Date().toISOString(),
-          })
-        }
+      // Always create new pedidos - no more merging with existing ones
+      pedidosToInsert.push({
+        comanda_id: comandaId,
+        produto_id: item.produto_id,
+        quantidade: item.quantidade,
+        preco_unitario: produto.preco,
+        subtotal: produto.preco * item.quantidade,
+        observacoes: itemObservacoes,
+        status: itemStatus,
+        tempo_pedido: new Date().toISOString(),
+      })
+    }
 
-        // Insert new pedidos
-        if (pedidosToInsert.length > 0) {
-          await supabase.from("pedidos").insert(pedidosToInsert)
-        }
+    // Insert new pedidos
+    if (pedidosToInsert.length > 0) {
+      await supabase.from("pedidos").insert(pedidosToInsert)
+    }
 
-        if (pedidosToInsert.length > 0) {
-          // Calculate new total from all pedidos in this comanda
-          const { data: allPedidos, error: totalError } = await supabase
-            .from("pedidos")
-            .select("subtotal")
-            .eq("comanda_id", comandaId)
-            .or("status.is.null,status.neq.entregue")
+    if (pedidosToInsert.length > 0) {
+      // Calculate new total from all pedidos in this comanda
+      const { data: allPedidos, error: totalError } = await supabase
+        .from("pedidos")
+        .select("subtotal")
+        .eq("comanda_id", comandaId)
+        .or("status.is.null,status.neq.entregue")
 
-          if (totalError) throw totalError
+      if (totalError) throw totalError
 
-          const novoTotal = allPedidos?.reduce((total, pedido) => total + (pedido.subtotal || 0), 0) || 0
+      const novoTotal = allPedidos?.reduce((total, pedido) => total + (pedido.subtotal || 0), 0) || 0
 
-          // Update comanda total in database
-          const { error: updateError } = await supabase
-            .from("comandas")
-            .update({ total: novoTotal })
-            .eq("id", comandaId)
+      // Update comanda total in database
+      const { error: updateError } = await supabase.from("comandas").update({ total: novoTotal }).eq("id", comandaId)
 
-          if (updateError) throw updateError
+      if (updateError) throw updateError
 
-          console.log(`[v0] Total da comanda atualizado para: R$ ${novoTotal.toFixed(2)}`)
+      console.log(`[v0] Total da comanda atualizado para: R$ ${novoTotal.toFixed(2)}`)
 
-          notifyOtherTabs("ITEMS_ADDED", { comandaId, itens })
+      notifyOtherTabs("ITEMS_ADDED", { comandaId, itens })
 
-          await refreshData()
-        }
-      },
-      (() => {
-        const pedidosToAdd = []
-
-        for (const item of itens) {
-          const produto = products.find((p) => p.id === item.produto_id)
-          if (!produto) continue
-
-          const mockPedido = {
-            id: generateUUID(),
-            comanda_id: comandaId,
-            produto_id: item.produto_id,
-            quantidade: item.quantidade,
-            preco_unitario: produto.preco,
-            subtotal: produto.preco * item.quantidade,
-            observacoes: item.observacoes?.trim() || null,
-            status: "preparando" as const,
-            tempo_pedido: new Date().toISOString(),
-            produto: produto,
-          }
-          pedidosToAdd.push(mockPedido)
-        }
-
-        setPedidos((prev) => [...prev, ...pedidosToAdd])
-        setMockData({ pedidos: [...mockData.pedidos, ...pedidosToAdd] })
-
-        // Update comanda total
-        const novoTotal = pedidosToAdd.reduce((total, pedido) => total + pedido.subtotal, 0)
-        setComandas((prev) => prev.map((c) => (c.id === comandaId ? { ...c, total: c.total + novoTotal } : c)))
-
-        console.log("[v0] DEV MODE: Mock items added to comanda:", pedidosToAdd)
-      })(),
-      "Add Items to Comanda",
-    )
+      await refreshData()
+    }
   }
 
   const getComandasByMesa = (mesaId: string) => {

@@ -153,18 +153,18 @@ export default function HomePage() {
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-purple-900/90 to-slate-900/95 backdrop-blur-sm" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        <header className="text-center py-8">
+        <header className="text-center py-4 md:py-8 px-4">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             className="mb-6"
           >
-            <div className="inline-block p-8 bg-gradient-to-br from-white/30 to-white/10 backdrop-blur-xl rounded-3xl border-4 border-orange-400/70 shadow-2xl hover:shadow-orange-400/40 transition-all duration-300 hover:scale-105">
-              <div className="text-6xl font-black text-orange-400 px-8 py-4 drop-shadow-2xl text-shadow-lg filter brightness-110 contrast-125">
+            <div className="inline-block p-4 md:p-8 bg-gradient-to-br from-white/30 to-white/10 backdrop-blur-xl rounded-3xl border-4 border-orange-400/70 shadow-2xl hover:shadow-orange-400/40 transition-all duration-300 hover:scale-105">
+              <div className="text-3xl sm:text-4xl md:text-6xl font-black text-orange-400 px-2 sm:px-4 md:px-8 py-2 md:py-4 drop-shadow-2xl text-shadow-lg filter brightness-110 contrast-125">
                 CONVENIÊNCIA
               </div>
-              <div className="text-lg text-orange-300 font-bold tracking-wider drop-shadow-lg bg-slate-900/50 px-4 py-2 rounded-lg border border-orange-400/30">
+              <div className="text-sm md:text-lg text-orange-300 font-bold tracking-wider drop-shadow-lg bg-slate-900/50 px-2 md:px-4 py-1 md:py-2 rounded-lg border border-orange-400/30">
                 SISTEMA DE GESTÃO
               </div>
             </div>
@@ -176,18 +176,22 @@ export default function HomePage() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="space-y-4"
           >
-            <h1 className="text-4xl md:text-5xl font-bold text-orange-400">Sistema de Pedidos</h1>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-orange-400">
+              Sistema de Pedidos
+            </h1>
             <div className="bg-slate-900/80 backdrop-blur-sm rounded-lg p-4 mx-auto max-w-2xl">
-              <p className="text-xl text-white">Plataforma ultra-moderna para gestão completa do seu restaurante</p>
+              <p className="text-lg sm:text-xl text-white">
+                Plataforma ultra-moderna para gestão completa do seu restaurante
+              </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-4 text-sm">
-              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-3 py-2 rounded-full border border-emerald-400/50">
+            <div className="flex flex-wrap justify-center gap-2 md:gap-4 text-xs md:text-sm">
+              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-2 md:px-3 py-1 md:py-2 rounded-full border border-emerald-400/50">
                 ⚡ Tecnologia de ponta
               </span>
-              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-3 py-2 rounded-full border border-emerald-400/50">
+              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-2 md:px-3 py-1 md:py-2 rounded-full border border-emerald-400/50">
                 📱 Interface intuitiva
               </span>
-              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-3 py-2 rounded-full border border-emerald-400/50">
+              <span className="flex items-center gap-1 bg-slate-800/90 text-white px-2 md:px-3 py-1 md:py-2 rounded-full border border-emerald-400/50">
                 ⏱️ Tempo real
               </span>
             </div>
