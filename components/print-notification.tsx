@@ -78,205 +78,140 @@ export function PrintNotification({ comandas, onPrintComanda }: PrintNotificatio
     }
   }
 
-  const createStandardizedReceipt = (nomeComanda: string, pedidosParaImprimir: any[], comandaId: string) => {
-    const total = pedidosParaImprimir.reduce((sum, pedido) => {
-      return sum + pedido.produto.preco * pedido.quantidade
-    }, 0)
+  const getCategoriaFromProduct = (produto: any) => {
+    if (produto.categoria_id) {
+      switch (produto.categoria_id) {
+        case "2b8538f0-9ffc-4982-bd15-b8fb49f67fa1":
+          return "bebidas"
+        case "3c9649f1-0aad-4093-ae26-c9ac50a78ab2":
+          return "porcoes"
+        default:
+          return "diversos"
+      }
+    }
+
+    const nome = produto.nome.toLowerCase()
+    if (
+      nome.includes("refrigerante") ||
+      nome.includes("suco") ||
+      nome.includes("caipirinha") ||
+      nome.includes("cerveja") ||
+      nome.includes("água") ||
+      nome.includes("drink")
+    ) {
+      return "bebidas"
+    }
+
+    return "porcoes"
+  }
+
+  const createUnifiedPrintHTML = (pedidos: any[], nomeComanda: string) => {
+    const bebidas = pedidos.filter((p) => getCategoriaFromProduct(p.produto) === "bebidas")
+    const porcoes = pedidos.filter((p) => getCategoriaFromProduct(p.produto) !== "bebidas")
 
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Comprovante - ${nomeComanda}</title>
+        <title>Comanda - ${nomeComanda}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
-            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-            font-size: 14px; 
-            line-height: 1.6; 
+            font-family: 'Arial', sans-serif;
+            font-size: 12px; 
+            line-height: 1.4; 
             margin: 0; 
-            padding: 20px;
-            max-width: 380px;
+            padding: 10px;
+            max-width: 300px;
             background: #ffffff;
-            color: #1f2937;
-            -webkit-font-smoothing: antialiased;
+            color: #000;
           }
           .receipt-container {
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 24px;
-            background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 2px solid #333;
+            padding: 15px;
+            background: #ffffff;
           }
           .header { 
             text-align: center; 
-            border-bottom: 3px solid #6366f1; 
-            padding-bottom: 16px; 
-            margin-bottom: 24px; 
+            border-bottom: 1px solid #ccc; 
+            padding-bottom: 10px; 
+            margin-bottom: 15px; 
           }
           .logo {
-            font-size: 24px;
-            font-weight: 900;
-            color: #6366f1;
-            letter-spacing: 1.5px;
-            margin-bottom: 6px;
-            text-transform: uppercase;
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
           }
           .comanda-info {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 5px;
+          }
+          .category-section {
+            margin-bottom: 20px;
+          }
+          .category-header {
+            background: #333;
             color: white;
-            padding: 16px;
-            border-radius: 8px;
-            text-align: center;
-            margin-bottom: 24px;
-            font-weight: 700;
-            font-size: 16px;
-            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
-          }
-          .datetime {
-            font-size: 12px;
-            color: #6b7280;
-            text-align: center;
-            margin-bottom: 24px;
-            font-weight: 500;
-          }
-          .items-section {
-            margin-bottom: 24px;
-          }
-          .section-title {
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-weight: bold;
             font-size: 13px;
-            font-weight: 800;
-            color: #374151;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            margin-bottom: 10px;
+            text-align: center;
           }
-          .section-title::before {
-            content: "🍽️";
-            font-size: 16px;
+          .category-header.bebidas {
+            background: #3b82f6;
+          }
+          .category-header.porcoes {
+            background: #f97316;
           }
           .item { 
             display: flex; 
             justify-content: space-between; 
-            align-items: flex-start;
-            margin-bottom: 16px; 
-            padding: 14px;
-            background: #f8fafc;
-            border-radius: 8px;
-            border-left: 4px solid #6366f1;
-            transition: all 0.2s ease;
+            margin-bottom: 8px; 
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 3px;
+            font-size: 11px;
           }
           .item-details {
             flex: 1;
           }
           .item-name {
-            font-weight: 700;
-            color: #1f2937;
-            margin-bottom: 4px;
-            font-size: 15px;
+            font-weight: bold;
+            margin-bottom: 2px;
           }
           .item-qty {
-            font-size: 12px;
-            color: #6b7280;
-            font-weight: 600;
-            background: #e0e7ff;
-            padding: 2px 8px;
-            border-radius: 12px;
-            display: inline-block;
+            font-size: 10px;
+            color: #666;
           }
           .item-obs {
-            font-size: 11px;
-            color: #dc2626;
+            font-size: 10px;
+            color: #d32f2f;
             font-style: italic;
-            margin-top: 6px;
-            padding: 6px 10px;
-            background: #fef2f2;
-            border-radius: 6px;
-            border: 1px solid #fecaca;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-          }
-          .item-obs::before {
-            content: "📝";
-            font-size: 12px;
+            margin-top: 3px;
           }
           .item-price {
-            font-weight: 800;
-            color: #059669;
-            font-size: 15px;
-            background: #ecfdf5;
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: 1px solid #a7f3d0;
-          }
-          .total-section { 
-            border-top: 3px solid #e5e7eb; 
-            padding-top: 20px; 
-            margin-top: 24px; 
-          }
-          .subtotal {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 12px;
-            font-size: 13px;
-            color: #6b7280;
-            font-weight: 600;
-          }
-          .total { 
-            display: flex;
-            justify-content: space-between;
-            font-weight: 900; 
-            font-size: 18px;
-            color: #1f2937;
-            padding: 16px;
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            border-radius: 8px;
-            border: 2px solid #0ea5e9;
-            box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.2);
+            font-weight: bold;
+            color: #2e7d32;
           }
           .footer { 
             text-align: center; 
-            margin-top: 28px; 
-            padding-top: 20px;
-            border-top: 2px dashed #d1d5db;
-          }
-          .thank-you {
-            font-size: 16px;
-            font-weight: 700;
-            color: #6366f1;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-          }
-          .thank-you::before {
-            content: "🙏";
-            font-size: 18px;
-          }
-          .system-info {
-            font-size: 11px;
-            color: #9ca3af;
-            line-height: 1.4;
+            margin-top: 15px; 
+            padding-top: 10px;
+            border-top: 1px dashed #ccc;
+            font-size: 10px;
+            color: #666;
           }
           @media print {
-            body { 
-              margin: 0; 
-              padding: 15px; 
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            .receipt-container {
-              border: 1px solid #e5e7eb;
-              padding: 20px;
-              background: white;
-              box-shadow: none;
-            }
+            body { margin: 0; padding: 8px; }
+            .receipt-container { border: 1px solid #000; padding: 10px; }
           }
         </style>
       </head>
@@ -290,70 +225,79 @@ export function PrintNotification({ comandas, onPrintComanda }: PrintNotificatio
             Comanda: ${nomeComanda}
           </div>
           
-          <div class="datetime">
-            📅 ${new Date().toLocaleString("pt-BR", {
+          ${
+            bebidas.length > 0
+              ? `
+            <div class="category-section">
+              <div class="category-header bebidas">🥤 Bebidas - Bar</div>
+              ${bebidas
+                .map(
+                  (pedido) => `
+                <div class="item">
+                  <div class="item-details">
+                    <div class="item-name">${pedido.produto.nome}</div>
+                    <div class="item-qty">${pedido.quantidade}x</div>
+                    ${pedido.observacoes ? `<div class="item-obs">${pedido.observacoes}</div>` : ""}
+                  </div>
+                  <div class="item-price">R$ ${(pedido.produto.preco * pedido.quantidade).toFixed(2)}</div>
+                </div>
+              `,
+                )
+                .join("")}
+            </div>
+          `
+              : ""
+          }
+          
+          ${
+            porcoes.length > 0
+              ? `
+            <div class="category-section">
+              <div class="category-header porcoes">🍟 Porções - Cozinha</div>
+              ${porcoes
+                .map(
+                  (pedido) => `
+                <div class="item">
+                  <div class="item-details">
+                    <div class="item-name">${pedido.produto.nome}</div>
+                    <div class="item-qty">${pedido.quantidade}x</div>
+                    ${pedido.observacoes ? `<div class="item-obs">${pedido.observacoes}</div>` : ""}
+                  </div>
+                  <div class="item-price">R$ ${(pedido.produto.preco * pedido.quantidade).toFixed(2)}</div>
+                </div>
+              `,
+                )
+                .join("")}
+            </div>
+          `
+              : ""
+          }
+          
+          <div class="footer">
+            ${new Date().toLocaleString("pt-BR", {
               day: "2-digit",
               month: "2-digit",
-              year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
             })}
           </div>
-          
-          <div class="items-section">
-            <div class="section-title">Itens do Pedido</div>
-            ${pedidosParaImprimir
-              .map(
-                (pedido) => `
-              <div class="item">
-                <div class="item-details">
-                  <div class="item-name">${pedido.produto.nome}</div>
-                  <div class="item-qty">${pedido.quantidade}x unidade</div>
-                  ${pedido.observacoes ? `<div class="item-obs">${pedido.observacoes}</div>` : ""}
-                </div>
-                <div class="item-price">R$ ${(pedido.produto.preco * pedido.quantidade).toFixed(2)}</div>
-              </div>
-            `,
-              )
-              .join("")}
-          </div>
-          
-          <div class="total-section">
-            <div class="subtotal">
-              <span>Subtotal:</span>
-              <span>R$ ${total.toFixed(2)}</span>
-            </div>
-            <div class="total">
-              <span>💰 TOTAL GERAL</span>
-              <span>R$ ${total.toFixed(2)}</span>
-            </div>
-          </div>
-          
-          <div class="footer">
-            <div class="thank-you">Obrigado pela preferência!</div>
-            <div class="system-info">
-              ${new Date().toLocaleString("pt-BR")}
-            </div>
-          </div>
         </div>
         
         <script>
-          console.log("[v0] Manual print: Página carregada");
+          let printAttempted = false;
           
           function attemptPrint() {
+            if (printAttempted) return;
+            printAttempted = true;
+            
             try {
-              console.log("[v0] Manual print: Tentando imprimir");
               window.print();
-              
               setTimeout(function() {
-                console.log("[v0] Manual print: Fechando janela");
                 window.close();
-              }, 2000);
+              }, 1500);
             } catch (error) {
-              console.error("[v0] Manual print: Erro na impressão:", error);
-              setTimeout(function() {
-                window.close();
-              }, 1000);
+              console.error("Print error:", error);
+              window.close();
             }
           }
           
@@ -361,19 +305,14 @@ export function PrintNotification({ comandas, onPrintComanda }: PrintNotificatio
             setTimeout(attemptPrint, 300);
           }
           
-          document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(attemptPrint, 500);
-          });
-          
-          window.onbeforeprint = function() {
-            console.log("[v0] Manual print: Preparando para imprimir");
-          }
-          
           window.onafterprint = function() {
-            console.log("[v0] Manual print: Impressão concluída");
             setTimeout(function() {
               window.close();
-            }, 1000);
+            }, 500);
+          }
+          
+          window.onbeforeunload = function() {
+            printAttempted = true;
           }
         </script>
       </body>
@@ -381,45 +320,14 @@ export function PrintNotification({ comandas, onPrintComanda }: PrintNotificatio
     `
   }
 
-  const handleManualPrintReceipt = (nomeComanda: string, pedidosParaImprimir: any[], comandaId: string) => {
-    console.log("[v0] Print notification: Iniciando impressão manual para:", nomeComanda)
+  const handleMarkAsPrinted = (comanda: any) => {
+    markAsPrinted(comanda.id)
+    savePrintedComanda(comanda.id)
+  }
 
-    if (!pedidosParaImprimir || pedidosParaImprimir.length === 0) {
-      console.log("[v0] Print notification: Nenhum pedido para imprimir")
-      return
-    }
-
-    try {
-      const receiptHTML = createStandardizedReceipt(nomeComanda, pedidosParaImprimir, comandaId)
-      const windowFeatures =
-        "width=450,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no"
-
-      const printWindow = window.open("", "_blank", windowFeatures)
-
-      if (printWindow && !printWindow.closed) {
-        printWindow.document.write(receiptHTML)
-        printWindow.document.close()
-        printWindow.focus()
-        console.log("[v0] Print notification: Janela de impressão aberta com sucesso")
-
-        savePrintedComanda(comandaId)
-
-        setTimeout(() => {
-          try {
-            printWindow.print()
-          } catch (e) {
-            console.log("[v0] Failed to trigger print:", e)
-          }
-        }, 1000)
-      } else {
-        alert(
-          `⚠️ POPUP BLOQUEADO!\n\nO navegador bloqueou a janela de impressão.\n\nComanda: ${nomeComanda}\n\nPor favor, permita popups para este site.`,
-        )
-      }
-    } catch (error) {
-      console.error("[v0] Print notification: Erro na impressão:", error)
-      alert(`❌ ERRO NA IMPRESSÃO!\n\nComanda: ${nomeComanda}\n\nErro: ${error.message}`)
-    }
+  const handleDismiss = () => {
+    setIsVisible(false)
+    setHasNewComandas(false)
   }
 
   const handlePrintComanda = (comanda: any) => {
@@ -439,23 +347,38 @@ export function PrintNotification({ comandas, onPrintComanda }: PrintNotificatio
         }
       })
 
-      handleManualPrintReceipt(comanda.numero_comanda, pedidosParaImprimir, comanda.id)
+      const bebidas = pedidosParaImprimir.filter((p) => getCategoriaFromProduct(p.produto) === "bebidas")
+      const porcoes = pedidosParaImprimir.filter((p) => getCategoriaFromProduct(p.produto) !== "bebidas")
+
+      console.log(`[v0] Print notification: Imprimindo comanda ${comanda.numero_comanda}`)
+      console.log(`[v0] Print notification: ${bebidas.length} bebidas, ${porcoes.length} porções`)
+
+      const todosItens = [...bebidas, ...porcoes]
+
+      if (todosItens.length > 0) {
+        const printHTML = createUnifiedPrintHTML(todosItens, comanda.numero_comanda)
+
+        try {
+          const printWindow = window.open("", "_blank", "width=450,height=700,scrollbars=yes,resizable=yes")
+
+          if (printWindow) {
+            printWindow.document.write(printHTML)
+            printWindow.document.close()
+            printWindow.focus()
+            console.log(`[v0] Print notification: Aba única aberta com sucesso`)
+          } else {
+            console.log(`[v0] Print notification: Falha ao abrir aba - popup bloqueado`)
+          }
+        } catch (error) {
+          console.error(`[v0] Print notification: Erro ao abrir aba:`, error)
+        }
+      }
     }
 
     if (onPrintComanda) {
       onPrintComanda(comanda)
     }
     markAsPrinted(comanda.id)
-  }
-
-  const handleMarkAsPrinted = (comanda: any) => {
-    markAsPrinted(comanda.id)
-    savePrintedComanda(comanda.id)
-  }
-
-  const handleDismiss = () => {
-    setIsVisible(false)
-    setHasNewComandas(false)
   }
 
   if (unprintedCount === 0) return null

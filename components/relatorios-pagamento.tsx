@@ -48,8 +48,14 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
   useEffect(() => {
     if (!comandas || !pedidos) return
 
+    const transacoesSalvas = localStorage.getItem("transacoes_acumuladas")
+    if (transacoesSalvas) {
+      // If we have saved transactions, don't reload from database
+      return
+    }
+
     const novasTransacoes = comandas
-      .filter((comanda) => comanda.status === "fechada" || comanda.total > 0)
+      .filter((comanda) => comanda.status === "fechada")
       .map((comanda) => {
         const pedidosDaComanda = pedidos.filter((p) => p.comanda_id === comanda.id)
         const itens = pedidosDaComanda.map((pedido) => ({
@@ -69,23 +75,12 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
         } as TransacaoPagamento
       })
 
-    // Merge new transactions with accumulated ones, avoiding duplicates
-    setTransacoesAcumuladas((prevTransacoes) => {
-      const todasTransacoes = [...prevTransacoes]
-      novasTransacoes.forEach((nova) => {
-        const existe = todasTransacoes.find((t) => t.id === nova.id)
-        if (!existe) {
-          todasTransacoes.push(nova)
-        }
-      })
-
-      // Save updated transactions to localStorage
-      const transacoesOrdenadas = todasTransacoes.sort((a, b) => b.data.getTime() - a.data.getTime())
+    if (novasTransacoes.length > 0 && transacoesAcumuladas.length === 0) {
+      const transacoesOrdenadas = novasTransacoes.sort((a, b) => b.data.getTime() - a.data.getTime())
       localStorage.setItem("transacoes_acumuladas", JSON.stringify(transacoesOrdenadas))
-
-      return transacoesOrdenadas
-    })
-  }, [comandas, pedidos, calcularTotalComanda])
+      setTransacoesAcumuladas(transacoesOrdenadas)
+    }
+  }, [comandas, pedidos, calcularTotalComanda, transacoesAcumuladas.length])
 
   const transacoesFiltradas = useMemo(() => {
     let filtradas = [...transacoesAcumuladas]
@@ -457,10 +452,8 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
     }
 
     try {
+      console.log("[v0] Iniciando fechamento do caixa...")
       toast.info("🔄 Fechando caixa...")
-
-      // Generate PDF report first
-      gerarRelatorioPDF()
 
       // Save daily total to localStorage for historical records
       const historicoCaixa = JSON.parse(localStorage.getItem("historico_caixa") || "[]")
@@ -473,14 +466,15 @@ export default function RelatoriosPagamento({ onBack }: RelatoriosPagamentoProps
       })
       localStorage.setItem("historico_caixa", JSON.stringify(historicoCaixa))
 
-      // Clear accumulated transactions
-      setTransacoesAcumuladas([])
+      console.log("[v0] Limpando dados do localStorage...")
       localStorage.removeItem("transacoes_acumuladas")
+      console.log("[v0] Limpando estado das transações...")
+      setTransacoesAcumuladas([])
 
-      const successMessage = `✅ Caixa fechado com sucesso!\n\nR$ ${totalDia.toFixed(2)} • ${totalTransacoes} transações\nRelatório PDF gerado automaticamente`
+      const successMessage = `✅ Caixa fechado com sucesso!\n\nR$ ${totalDia.toFixed(2)} • ${totalTransacoes} transações\nUse o botão "Gerar PDF" para baixar o relatório`
 
+      console.log("[v0] Caixa fechado com sucesso!")
       alert(successMessage)
-
       toast.success("🎉 Caixa fechado com sucesso!")
     } catch (error) {
       console.error("Erro ao fechar caixa:", error)

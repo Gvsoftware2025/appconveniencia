@@ -372,10 +372,8 @@ function CategoryPrintSystem({ nomeComanda, pedidos, onPrintComplete }: Category
   }
 
   useEffect(() => {
-    if (Object.keys(groupedPedidos).length > 0) {
-      console.log("[v0] Category print: Auto-iniciando impressão separada por categoria")
-      handlePrintAllCategories()
-    }
+    // This component should only be used for manual printing
+    console.log("[v0] Category print: Component loaded but auto-print disabled")
   }, []) // Only run once when component mounts
 
   if (Object.keys(groupedPedidos).length === 0) return null

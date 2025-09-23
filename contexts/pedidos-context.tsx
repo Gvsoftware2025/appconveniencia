@@ -134,6 +134,13 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       channel.postMessage(message)
       channel.close()
     }
+
+    // Additional custom event for immediate local updates
+    window.dispatchEvent(
+      new CustomEvent("pedidos_updated", {
+        detail: { action, data, timestamp: Date.now() },
+      }),
+    )
   }
 
   useEffect(() => {
@@ -361,7 +368,7 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
           refreshData()
         }
       },
-      15000, // 15 seconds instead of 90 seconds
+      3000, // Reduced to 3 seconds for real-time sync
     )
 
     return () => clearInterval(refreshInterval)
@@ -634,15 +641,22 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
 
   const finalizarComanda = async (comandaId: string) => {
     try {
-      // Delete all pedidos from this comanda
-      await supabase.from("pedidos").delete().eq("comanda_id", comandaId)
+      const { error: comandaError } = await supabase.from("comandas").update({ status: "fechada" }).eq("id", comandaId)
 
-      // Delete the comanda
-      await supabase.from("comandas").delete().eq("id", comandaId)
+      if (comandaError) throw comandaError
 
-      // Remove from local state
+      const { error: pedidosError } = await supabase
+        .from("pedidos")
+        .update({ status: "entregue" })
+        .eq("comanda_id", comandaId)
+
+      if (pedidosError) throw pedidosError
+
+      // Remove from local state (only open comandas are loaded)
       setComandas((prev) => prev.filter((c) => c.id !== comandaId))
       setPedidos((prev) => prev.filter((p) => p.comanda_id !== comandaId))
+
+      notifyOtherTabs("COMANDA_FINALIZED", { comandaId })
 
       console.log("[v0] Comanda finalizada com sucesso")
     } catch (error) {

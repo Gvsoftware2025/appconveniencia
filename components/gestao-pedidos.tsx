@@ -6,7 +6,6 @@ import { ArrowLeft, BarChart3, Clock, Users, Settings } from "lucide-react"
 import Image from "next/image"
 import { PrintNotification } from "@/components/print-notification"
 import { usePrintStatus } from "@/hooks/use-print-status"
-import { CategoryPrintSystem } from "@/components/category-print-system"
 
 interface GestaoPedidosProps {
   onBack: () => void
@@ -42,46 +41,8 @@ export default function GestaoPedidos({ onBack, onPasswordSettings }: GestaoPedi
   }, [refreshData])
 
   const handleAutoPrint = (comanda: any) => {
-    const pedidosComanda = pedidos?.filter((pedido) => pedido.comanda_id === comanda.id) || []
-
-    if (pedidosComanda.length > 0) {
-      const pedidosParaImprimir = pedidosComanda.map((pedido) => {
-        const produto = products.find((p) => p.id === pedido.produto_id)
-        return {
-          ...pedido,
-          produto: produto || {
-            id: pedido.produto_id,
-            nome: "Produto não encontrado",
-            preco: 0,
-            categoria_id: "",
-          },
-        }
-      })
-
-      const printContainer = document.createElement("div")
-      document.body.appendChild(printContainer)
-
-      const categoryPrintElement = document.createElement("div")
-      printContainer.appendChild(categoryPrintElement)
-
-      import("react").then(({ createElement }) => {
-        import("react-dom/client").then(({ createRoot }) => {
-          const root = createRoot(categoryPrintElement)
-          root.render(
-            createElement(CategoryPrintSystem, {
-              nomeComanda: comanda.numero_comanda,
-              pedidos: pedidosParaImprimir,
-              onPrintComplete: () => {
-                markAsPrinted(comanda.id)
-                setTimeout(() => {
-                  document.body.removeChild(printContainer)
-                }, 5000)
-              },
-            }),
-          )
-        })
-      })
-    }
+    console.log("[v0] Gestão: Marcando comanda como impressa:", comanda.numero_comanda)
+    markAsPrinted(comanda.id)
   }
 
   const totalComandas = (comandas || []).length
