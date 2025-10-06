@@ -1,0 +1,39 @@
+{
+  "name": "Conveniência Rives - Sistema de Gestão",
+  "short_name": "Conv. Rives",
+  "description": "Sistema completo de gestão para conveniência - pedidos, pagamentos e relatórios",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#7c3aed",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "food"],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ]
+}
