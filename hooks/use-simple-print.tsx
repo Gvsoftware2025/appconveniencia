@@ -26,6 +26,18 @@ export function useSimplePrint() {
   const isPrintingRef = useRef(false)
   const printWindowsRef = useRef<Window[]>([])
 
+  useEffect(() => {
+    console.log("[v0] Simple Print: Hook state:", {
+      activeInterface,
+      comandasCount: comandas?.length || 0,
+      pedidosCount: pedidos?.length || 0,
+      productsCount: products?.length || 0,
+      isInitialized: isInitializedRef.current,
+      isPrinting: isPrintingRef.current,
+      processedCount: processedPedidosRef.current.size,
+    })
+  }, [activeInterface, comandas?.length, pedidos?.length, products?.length])
+
   const getCategoriaFromProduct = (produto: PrintData["produto"]) => {
     if (produto.categoria_id) {
       switch (produto.categoria_id) {
@@ -81,7 +93,6 @@ export function useSimplePrint() {
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           
-          /* Optimized for thermal printers - darker text, compact layout */
           body { 
             font-family: 'Courier New', monospace;
             font-size: 14px; 
@@ -277,7 +288,7 @@ export function useSimplePrint() {
   const printCategory = (categoria: string, pedidos: PrintData[], nomeComanda: string) => {
     if (!pedidos || pedidos.length === 0) return
 
-    console.log(`[v0] Simple Print: Abrindo 1 aba para ${categoria}`)
+    console.log(`[v0] Simple Print: Abrindo janela de impressão para ${categoria}`)
 
     try {
       const printHTML = createPrintHTML(categoria, pedidos, nomeComanda)
@@ -289,12 +300,15 @@ export function useSimplePrint() {
         printWindow.document.write(printHTML)
         printWindow.document.close()
         printWindow.focus()
-        console.log(`[v0] Simple Print: Aba de ${categoria} aberta com sucesso`)
+        console.log(`[v0] Simple Print: Janela de ${categoria} aberta com sucesso`)
       } else {
-        console.log(`[v0] Simple Print: Falha ao abrir aba de ${categoria} - popup bloqueado`)
+        console.log(`[v0] Simple Print: Falha ao abrir janela de ${categoria} - popup bloqueado`)
+        alert(
+          `Não foi possível abrir a janela de impressão. Por favor, permita pop-ups para este site e tente novamente.`,
+        )
       }
     } catch (error) {
-      console.error(`[v0] Simple Print: Erro ao abrir aba de ${categoria}:`, error)
+      console.error(`[v0] Simple Print: Erro ao abrir janela de ${categoria}:`, error)
     }
   }
 
@@ -307,10 +321,13 @@ export function useSimplePrint() {
     cleanupPrintWindows()
 
     isPrintingRef.current = true
-    console.log(`[v0] Simple Print: Iniciando impressão simples para ${nomeComanda}`)
+    console.log(`[v0] Simple Print: Iniciando impressão automática para ${nomeComanda}`)
+    console.log(`[v0] Simple Print: Total de ${pedidos.length} pedidos para imprimir`)
 
     const bebidas = pedidos.filter((p) => getCategoriaFromProduct(p.produto) === "bebidas")
     const porcoes = pedidos.filter((p) => getCategoriaFromProduct(p.produto) !== "bebidas")
+
+    console.log(`[v0] Simple Print: ${bebidas.length} bebidas, ${porcoes.length} porções`)
 
     if (bebidas.length > 0) {
       printCategory("bebidas", bebidas, nomeComanda)
@@ -324,17 +341,20 @@ export function useSimplePrint() {
 
     setTimeout(() => {
       isPrintingRef.current = false
-      // Clean up any remaining windows after print timeout
       setTimeout(cleanupPrintWindows, 2000)
     }, 2000)
   }
 
   useEffect(() => {
+    console.log("[v0] Simple Print: useEffect triggered")
+
     if (!comandas || !pedidos || !products) {
+      console.log("[v0] Simple Print: Dados não carregados ainda")
       return
     }
 
     const shouldMonitor = activeInterface === "comandas"
+    console.log("[v0] Simple Print: Should monitor?", shouldMonitor, "Active interface:", activeInterface)
 
     if (!shouldMonitor) {
       if (printWindowsRef.current.length > 0) {
@@ -354,7 +374,11 @@ export function useSimplePrint() {
 
     const newPedidos = pedidos.filter((pedido) => !processedPedidosRef.current.has(pedido.id))
 
+    console.log("[v0] Simple Print: Novos pedidos detectados:", newPedidos.length)
+
     if (newPedidos.length > 0 && !isPrintingRef.current) {
+      console.log("[v0] Simple Print: Processando novos pedidos para impressão automática")
+
       const pedidosByComanda = new Map<string, typeof newPedidos>()
 
       newPedidos.forEach((pedido) => {
@@ -363,6 +387,8 @@ export function useSimplePrint() {
         }
         pedidosByComanda.get(pedido.comanda_id)!.push(pedido)
       })
+
+      console.log("[v0] Simple Print: Comandas com novos pedidos:", pedidosByComanda.size)
 
       pedidosByComanda.forEach((pedidosComanda, comandaId) => {
         const comanda = comandas.find((c) => c.id === comandaId)
@@ -376,7 +402,7 @@ export function useSimplePrint() {
 
           if (pedidosComProdutos.length > 0) {
             console.log(
-              "[v0] Simple Print: Imprimindo",
+              "[v0] Simple Print: INICIANDO IMPRESSÃO AUTOMÁTICA -",
               pedidosComProdutos.length,
               "pedidos da comanda",
               comanda.numero_comanda,

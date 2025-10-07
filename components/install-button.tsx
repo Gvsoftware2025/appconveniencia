@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Download, X, Smartphone, Monitor, Sparkles } from "lucide-react"
+import { Download, Sparkles } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
 interface BeforeInstallPromptEvent extends Event {
@@ -12,17 +12,23 @@ interface BeforeInstallPromptEvent extends Event {
 export default function InstallButton() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isInstalled, setIsInstalled] = useState(false)
-  const [showInstallPrompt, setShowInstallPrompt] = useState(true)
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false)
   const [installStatus, setInstallStatus] = useState<"idle" | "installing">("idle")
-  const [showInstructions, setShowInstructions] = useState(false)
 
   useEffect(() => {
     console.log("[v0] InstallButton: Component mounted")
 
+    const userAgent = window.navigator.userAgent.toLowerCase()
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent)
+
+    if (isIOSDevice) {
+      console.log("[v0] InstallButton: iOS device detected, hiding button (use Safari share menu)")
+      return
+    }
+
     if (window.matchMedia("(display-mode: standalone)").matches) {
       console.log("[v0] InstallButton: App already installed, hiding button")
       setIsInstalled(true)
-      setShowInstallPrompt(false)
       return
     }
 
@@ -43,15 +49,8 @@ export default function InstallButton() {
       setShowInstallPrompt(false)
     })
 
-    const timeout = setTimeout(() => {
-      if (!deferredPrompt) {
-        console.log("[v0] InstallButton: beforeinstallprompt event did not fire")
-      }
-    }, 2000)
-
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
-      clearTimeout(timeout)
     }
   }, [])
 
@@ -59,8 +58,7 @@ export default function InstallButton() {
     console.log("[v0] InstallButton: Install button clicked")
 
     if (!deferredPrompt) {
-      console.log("[v0] InstallButton: No install prompt available, showing manual instructions")
-      setShowInstructions(true)
+      console.log("[v0] InstallButton: No install prompt available")
       return
     }
 
@@ -89,78 +87,6 @@ export default function InstallButton() {
 
   if (isInstalled || !showInstallPrompt) {
     return null
-  }
-
-  if (showInstructions) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-        onClick={() => setShowInstructions(false)}
-      >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0, y: 20 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-700"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-orange-400" />
-              Como Instalar
-            </h3>
-            <button
-              onClick={() => setShowInstructions(false)}
-              className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-slate-700 rounded-lg"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="space-y-6 text-gray-300">
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-              <div className="flex items-start gap-3">
-                <div className="bg-orange-500/10 p-2 rounded-lg">
-                  <Monitor className="w-6 h-6 text-orange-400" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-white mb-2">No Computador</h4>
-                  <ol className="list-decimal list-inside space-y-2 text-sm">
-                    <li>Clique no ícone de instalação na barra de endereços</li>
-                    <li>Ou vá em Menu → Instalar Conveniência Rives</li>
-                    <li>Confirme a instalação</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-              <div className="flex items-start gap-3">
-                <div className="bg-orange-500/10 p-2 rounded-lg">
-                  <Smartphone className="w-6 h-6 text-orange-400" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-white mb-2">No Celular</h4>
-                  <ol className="list-decimal list-inside space-y-2 text-sm">
-                    <li>Toque no menu (⋮) do navegador</li>
-                    <li>Selecione "Adicionar à tela inicial"</li>
-                    <li>Confirme a instalação</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowInstructions(false)}
-            className="w-full mt-6 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-orange-500/50"
-          >
-            Entendi
-          </button>
-        </motion.div>
-      </motion.div>
-    )
   }
 
   return (
