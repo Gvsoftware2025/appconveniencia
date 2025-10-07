@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { ArrowLeft, Eye, CreditCard, Users, Clock } from "lucide-react"
@@ -8,13 +8,20 @@ import { usePedidos } from "@/contexts/pedidos-context"
 import Image from "next/image"
 import { PrintNotification } from "@/components/print-notification"
 import { useSimplePrint } from "@/hooks/use-simple-print"
+import { useInterface } from "@/contexts/interface-context"
 
 export default function ComandasPage() {
   const router = useRouter()
   const { comandas, getPedidosByComanda, calcularTotalComanda, pedidos, products } = usePedidos()
   const [filtro, setFiltro] = useState<"todas" | "abertas" | "fechadas">("abertas")
+  const { setActiveInterface } = useInterface()
 
   const { handleSimplePrint } = useSimplePrint()
+
+  useEffect(() => {
+    setActiveInterface("comandas")
+    return () => setActiveInterface(null)
+  }, [setActiveInterface])
 
   const comandasFiltradas = comandas.filter((comanda) => {
     if (filtro === "todas") return true

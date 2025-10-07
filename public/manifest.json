@@ -4,8 +4,8 @@
   "description": "Sistema completo de gestão para conveniência - pedidos, pagamentos e relatórios",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#7c3aed",
-  "theme_color": "#7c3aed",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
   "orientation": "portrait-primary",
   "icons": [
     {

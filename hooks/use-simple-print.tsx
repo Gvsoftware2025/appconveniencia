@@ -334,7 +334,7 @@ export function useSimplePrint() {
       return
     }
 
-    const shouldMonitor = activeInterface === "pagamento"
+    const shouldMonitor = activeInterface === "comandas"
 
     if (!shouldMonitor) {
       if (printWindowsRef.current.length > 0) {
@@ -399,7 +399,7 @@ export function useSimplePrint() {
   }, [])
 
   return {
-    isMonitoring: activeInterface === "pagamento",
+    isMonitoring: activeInterface === "comandas",
     handleSimplePrint,
   }
 }

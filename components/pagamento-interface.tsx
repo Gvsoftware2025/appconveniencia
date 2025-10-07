@@ -8,7 +8,6 @@ import { usePedidos } from "@/contexts/pedidos-context"
 import { toast } from "sonner"
 import Image from "next/image"
 import { Banknote, Smartphone, Check, BarChart3 } from "lucide-react"
-import { PrintNotification } from "@/components/print-notification"
 import { usePrintStatus } from "@/hooks/use-print-status"
 import RelatoriosPagamento from "./relatorios-pagamento"
 import { useSimplePrint } from "@/hooks/use-simple-print"
@@ -589,8 +588,6 @@ export default function PagamentoInterface({ onBack, mesaId }: PagamentoInterfac
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 text-white">
-      <PrintNotification comandas={comandasAbertas} onPrintComanda={handleAutoPrint} />
-
       <div className="relative z-10">
         <header className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/5 border-b border-white/10">
           <button

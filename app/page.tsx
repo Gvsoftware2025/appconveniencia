@@ -9,6 +9,7 @@ import GestaoInterface from "@/components/gestao-pedidos"
 import PagamentoInterface from "@/components/pagamento-interface"
 import AdminProdutos from "@/components/admin-produtos"
 import PasswordProtection from "@/components/password-protection"
+import InstallButton from "@/components/install-button"
 import { useRouter } from "next/navigation"
 
 export default function HomePage() {
@@ -274,6 +275,7 @@ export default function HomePage() {
           </div>
         </footer>
       </div>
+      <InstallButton />
     </div>
   )
 }
