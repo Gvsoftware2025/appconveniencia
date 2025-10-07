@@ -6,15 +6,15 @@ import { ToastProvider } from "@/components/toast-notification"
 import GlobalPrintMonitor from "@/components/global-print-monitor"
 
 export const metadata = {
-  title: "Sistema Conveniência - Gestão de Pedidos",
+  title: "Conveniência Rives - Sistema de Gestão",
   description: "Sistema completo para gestão de pedidos, comandas e pagamentos",
   generator: "v0.app",
   manifest: "/manifest.json",
-  themeColor: "#7c3aed",
+  themeColor: "#1e293b",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "Conv. Rives",
+    statusBarStyle: "black-translucent",
+    title: "Conveniência Rives",
   },
 }
 
@@ -29,11 +29,11 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Conv. Rives" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Conveniência Rives" />
         <link rel="manifest" href="/manifest.json" />
-        <link rel="icon" href="/icon-192.jpg" />
-        <link rel="apple-touch-icon" href="/icon-192.jpg" />
+        <link rel="icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
