@@ -6,8 +6,6 @@ import { motion } from "framer-motion"
 import { ArrowLeft, Eye, CreditCard, Users, Clock } from "lucide-react"
 import { usePedidos } from "@/contexts/pedidos-context"
 import Image from "next/image"
-import { PrintNotification } from "@/components/print-notification"
-import { useSimplePrint } from "@/hooks/use-simple-print"
 import { useInterface } from "@/contexts/interface-context"
 
 export default function ComandasPage() {
@@ -15,8 +13,6 @@ export default function ComandasPage() {
   const { comandas, getPedidosByComanda, calcularTotalComanda, pedidos, products } = usePedidos()
   const [filtro, setFiltro] = useState<"todas" | "abertas" | "fechadas">("abertas")
   const { setActiveInterface } = useInterface()
-
-  const { handleSimplePrint } = useSimplePrint()
 
   useEffect(() => {
     setActiveInterface("comandas")
@@ -62,8 +58,6 @@ export default function ComandasPage() {
           },
         }
       })
-
-      handleSimplePrint(comanda.numero_comanda, pedidosParaImprimir)
     }
   }
 
@@ -79,8 +73,6 @@ export default function ComandasPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 text-white">
-      <PrintNotification comandas={comandasAbertas} onPrintComanda={handleAutoPrint} />
-
       <div className="relative z-10">
         <header className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/5 border-b border-white/10">
           <button

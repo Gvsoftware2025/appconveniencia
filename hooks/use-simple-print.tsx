@@ -376,46 +376,15 @@ export function useSimplePrint() {
 
     console.log("[v0] Simple Print: Novos pedidos detectados:", newPedidos.length)
 
-    if (newPedidos.length > 0 && !isPrintingRef.current) {
-      console.log("[v0] Simple Print: Processando novos pedidos para impressão automática")
+    // if (newPedidos.length > 0 && !isPrintingRef.current) {
+    //   console.log("[v0] Simple Print: Processando novos pedidos para impressão automática")
+    //   ... automatic print logic commented out ...
+    // }
 
-      const pedidosByComanda = new Map<string, typeof newPedidos>()
-
-      newPedidos.forEach((pedido) => {
-        if (!pedidosByComanda.has(pedido.comanda_id)) {
-          pedidosByComanda.set(pedido.comanda_id, [])
-        }
-        pedidosByComanda.get(pedido.comanda_id)!.push(pedido)
-      })
-
-      console.log("[v0] Simple Print: Comandas com novos pedidos:", pedidosByComanda.size)
-
-      pedidosByComanda.forEach((pedidosComanda, comandaId) => {
-        const comanda = comandas.find((c) => c.id === comandaId)
-        if (comanda) {
-          const pedidosComProdutos = pedidosComanda
-            .map((pedido) => {
-              const produto = products.find((p) => p.id === pedido.produto_id)
-              return produto ? { ...pedido, produto } : null
-            })
-            .filter(Boolean) as PrintData[]
-
-          if (pedidosComProdutos.length > 0) {
-            console.log(
-              "[v0] Simple Print: INICIANDO IMPRESSÃO AUTOMÁTICA -",
-              pedidosComProdutos.length,
-              "pedidos da comanda",
-              comanda.numero_comanda,
-            )
-            handleSimplePrint(comanda.numero_comanda, pedidosComProdutos)
-          }
-        }
-      })
-
-      newPedidos.forEach((pedido) => {
-        processedPedidosRef.current.add(pedido.id)
-      })
-    }
+    // Still mark new pedidos as processed to avoid duplicate detection
+    newPedidos.forEach((pedido) => {
+      processedPedidosRef.current.add(pedido.id)
+    })
   }, [comandas, pedidos, products, activeInterface])
 
   useEffect(() => {

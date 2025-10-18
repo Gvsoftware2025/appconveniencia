@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
-import { X, Plus, ShoppingCart, Users, Settings, ArrowLeft, Search } from "lucide-react"
+import { X, Plus, ShoppingCart, Users, Settings, ArrowLeft, Search, CheckCircle2, Circle } from "lucide-react"
 import Image from "next/image"
 import { usePedidos } from "@/contexts/pedidos-context"
 import { useToast } from "./toast-notification"
@@ -38,6 +38,7 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     criarComanda: criarComandaContext,
     removerItemPedido,
     excluirComanda,
+    updatePedidoStatus,
   } = usePedidos()
   const toast = useToast()
 
@@ -115,6 +116,14 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
       window.removeEventListener("orderReady", eventListener)
     }
   }, [handleOrderReady])
+
+  useEffect(() => {
+    if (comandaSelecionada && telaAtual === "produtos") {
+      const pedidosAtualizados = getPedidosByComanda(comandaSelecionada.id)
+      console.log("[v0] Updating pedidosExistentes:", pedidosAtualizados.length)
+      setPedidosExistentes(pedidosAtualizados)
+    }
+  }, [comandaSelecionada, pedidos, telaAtual, getPedidosByComanda])
 
   const handleCriarNovaComanda = () => {
     if (!nomeComanda || !nomeComanda.trim()) {
@@ -504,6 +513,42 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
     return numeroComanda
   }
 
+  const handleToggleEntrega = async (pedidoId: string, currentStatus: string) => {
+    console.log("[v0] toggleEntregue called for pedido:", pedidoId, "current status:", currentStatus)
+
+    try {
+      const newStatus = currentStatus === "entregue" ? "preparando" : "entregue"
+      console.log("[v0] New status will be:", newStatus)
+
+      setPedidosExistentes((prev) =>
+        prev.map((pedido) => {
+          if (pedido.id === pedidoId) {
+            console.log("[v0] Updating pedido in local state:", pedido.id)
+            return { ...pedido, status: newStatus }
+          }
+          return pedido
+        }),
+      )
+
+      await updatePedidoStatus(pedidoId, newStatus)
+      console.log("[v0] Status updated in database")
+
+      await refreshData()
+      console.log("[v0] Data refreshed from context")
+
+      toast.success(newStatus === "entregue" ? "Item marcado como entregue!" : "Item desmarcado")
+    } catch (error) {
+      console.error("[v0] Erro ao atualizar status de entrega:", error)
+
+      if (comandaSelecionada) {
+        const pedidosAtualizados = getPedidosByComanda(comandaSelecionada.id)
+        setPedidosExistentes(pedidosAtualizados)
+      }
+
+      toast.error("Erro ao atualizar status. Tente novamente.")
+    }
+  }
+
   const handleRemoverItemExistente = async (pedidoId: string) => {
     try {
       await removerItemPedido(pedidoId)
@@ -824,7 +869,14 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => setTelaAtual("novaComanda")}
+                onClick={() => {
+                  setNomeComanda("")
+                  setComandaSelecionada(null)
+                  setProdutosSelecionados({})
+                  setObservacoesProdutos({})
+                  setPedidosExistentes([])
+                  setTelaAtual("novaComanda")
+                }}
                 className="backdrop-blur-xl bg-gradient-to-br from-green-500/20 to-emerald-600/20 border border-green-400/30 rounded-2xl p-8 text-center hover:from-green-500/30 hover:to-emerald-600/30 transition-all duration-300 shadow-xl"
               >
                 <div className="flex flex-col items-center gap-4">
@@ -986,282 +1038,322 @@ export default function GarcomInterface({ onBack }: GarcomInterfaceProps) {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-1 lg:order-1">
-                  <div className="sticky top-6 space-y-4 max-h-[calc(90vh-3rem)] overflow-y-auto scrollbar-hide">
-                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-                      <h4 className="font-semibold text-white mb-3">📋 Resumo do Pedido</h4>
+              <div className="lg:col-span-1 lg:order-1">
+                <div className="sticky top-6 space-y-4">
+                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 max-h-[calc(90vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-emerald-500/30 scrollbar-track-transparent">
+                    <h4 className="font-semibold text-white mb-4 text-lg">📋 Resumo do Pedido</h4>
 
-                      {Object.keys(produtosSelecionados).length > 0 && (
-                        <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-400/30 rounded-lg">
-                          <h5 className="text-emerald-400 font-medium mb-2">🛒 Novos itens selecionados:</h5>
-                          <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-hide">
-                            {Object.entries(produtosSelecionados).map(([produtoId, quantidade]) => {
-                              const produto = products.find((p) => p.id === produtoId)
-                              if (!produto) return null
-                              return (
-                                <div
-                                  key={produtoId}
-                                  className="flex items-center justify-between text-sm bg-white/5 p-2 rounded-lg"
-                                >
-                                  <div className="flex-1">
-                                    <span className="text-white block">
-                                      {produto.nome} x{quantidade}
-                                    </span>
-                                    <span className="text-emerald-400 text-xs">
-                                      R$ {(produto.preco * quantidade).toFixed(2)}
-                                    </span>
-                                    {observacoesProdutos[produtoId] && (
-                                      <span className="text-yellow-400 text-xs block">
-                                        Obs: {observacoesProdutos[produtoId]}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <button
-                                    onClick={() => handleRemoverSelecao(produtoId)}
-                                    className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
-                                    title="Remover item"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {pedidosExistentes.length > 0 && (
-                        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-400/30 rounded-lg">
-                          <h5 className="text-blue-400 font-medium mb-2">🍽️ Itens já pedidos pelos clientes:</h5>
-                          <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-hide">
-                            {pedidosExistentes.map((pedido, index) => (
+                    {Object.keys(produtosSelecionados).length > 0 && (
+                      <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-400/30 rounded-lg">
+                        <h5 className="text-emerald-400 font-medium mb-2">🛒 Novos itens selecionados:</h5>
+                        <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-hide">
+                          {Object.entries(produtosSelecionados).map(([produtoId, quantidade]) => {
+                            const produto = products.find((p) => p.id === produtoId)
+                            if (!produto) return null
+                            return (
                               <div
-                                key={index}
+                                key={produtoId}
                                 className="flex items-center justify-between text-sm bg-white/5 p-2 rounded-lg"
                               >
                                 <div className="flex-1">
                                   <span className="text-white block">
-                                    {pedido.produto?.nome} x{pedido.quantidade}
+                                    {produto.nome} x{quantidade}
                                   </span>
-                                  <span className="text-green-400 text-xs">
-                                    R$ {(pedido.produto?.preco * pedido.quantidade).toFixed(2)}
+                                  <span className="text-emerald-400 text-xs">
+                                    R$ {(produto.preco * quantidade).toFixed(2)}
                                   </span>
+                                  {observacoesProdutos[produtoId] && (
+                                    <span className="text-yellow-400 text-xs block">
+                                      Obs: {observacoesProdutos[produtoId]}
+                                    </span>
+                                  )}
                                 </div>
                                 <button
-                                  onClick={() => handleRemoverItemExistente(pedido.id)}
+                                  onClick={() => handleRemoverSelecao(produtoId)}
                                   className="ml-2 p-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
-                                  title="Excluir item"
+                                  title="Remover item"
                                 >
                                   <X className="w-3 h-3" />
                                 </button>
                               </div>
-                            ))}
-                          </div>
-                          <div className="mt-2 pt-2 border-t border-blue-400/20">
-                            <div className="flex justify-between text-sm font-medium">
-                              <span className="text-blue-400">Total já pedido:</span>
-                              <span className="text-green-400">
-                                R${" "}
-                                {pedidosExistentes
-                                  .reduce((total, pedido) => total + pedido.produto?.preco * pedido.quantidade, 0)
-                                  .toFixed(2)}
-                              </span>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {pedidosExistentes.length > 0 && (
+                      <div className="mb-4 p-4 bg-blue-500/10 border border-blue-400/30 rounded-lg">
+                        <h5 className="text-blue-400 font-medium mb-3 text-base">🍽️ Itens já pedidos:</h5>
+                        <div className="space-y-3 pr-2">
+                          {pedidosExistentes.map((pedido, index) => (
+                            <div
+                              key={pedido.id || index}
+                              className={`flex items-start gap-3 p-4 rounded-lg transition-all duration-200 ${
+                                pedido.status === "entregue"
+                                  ? "bg-green-500/20 border-2 border-green-400/50 shadow-lg shadow-green-500/20"
+                                  : "bg-white/10 border border-white/20"
+                              }`}
+                            >
+                              <button
+                                onClick={() => {
+                                  console.log("[v0] Delivery button clicked for pedido:", pedido.id)
+                                  handleToggleEntrega(pedido.id, pedido.status)
+                                }}
+                                className={`flex-shrink-0 p-3 rounded-xl transition-all duration-200 hover:scale-110 ${
+                                  pedido.status === "entregue"
+                                    ? "bg-green-500/40 text-green-300 hover:bg-green-500/50 shadow-lg"
+                                    : "bg-gray-500/30 text-gray-400 hover:bg-gray-500/40"
+                                }`}
+                                title={
+                                  pedido.status === "entregue" ? "Marcar como não entregue" : "Marcar como entregue"
+                                }
+                              >
+                                {pedido.status === "entregue" ? (
+                                  <CheckCircle2 className="w-7 h-7" />
+                                ) : (
+                                  <Circle className="w-7 h-7" />
+                                )}
+                              </button>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2 mb-1">
+                                  <span
+                                    className={`text-white font-semibold text-base ${pedido.status === "entregue" ? "text-green-100" : ""}`}
+                                  >
+                                    {pedido.produto?.nome}
+                                  </span>
+                                  <span className="text-white/70 text-sm font-medium">x{pedido.quantidade}</span>
+                                </div>
+                                <span className="text-green-400 font-medium text-sm block mb-2">
+                                  R$ {(pedido.produto?.preco * pedido.quantidade).toFixed(2)}
+                                </span>
+                                {pedido.status === "entregue" && (
+                                  <span className="inline-flex items-center gap-1 text-green-300 text-xs bg-green-500/40 px-3 py-1.5 rounded-full font-medium">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Entregue
+                                  </span>
+                                )}
+                                {pedido.observacoes && (
+                                  <p className="text-yellow-300 text-xs mt-2 italic bg-yellow-500/10 px-2 py-1 rounded">
+                                    Obs: {pedido.observacoes}
+                                  </p>
+                                )}
+                              </div>
+
+                              <button
+                                onClick={() => handleRemoverItemExistente(pedido.id)}
+                                className="flex-shrink-0 p-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors hover:scale-110"
+                                title="Excluir item"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
                             </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-blue-400/30">
+                          <div className="flex justify-between text-base font-semibold">
+                            <span className="text-blue-300">Total já pedido:</span>
+                            <span className="text-green-400">
+                              R${" "}
+                              {pedidosExistentes
+                                .reduce((total, pedido) => total + pedido.produto?.preco * pedido.quantidade, 0)
+                                .toFixed(2)}
+                            </span>
                           </div>
                         </div>
-                      )}
-
-                      <div className="space-y-2 text-sm">
-                        <p className="text-gray-300">
-                          Comanda: <span className="text-white font-medium">{getOriginalComandaName(nomeComanda)}</span>
-                        </p>
-                        <p className="text-gray-300">
-                          Novos itens selecionados:{" "}
-                          <span className="text-emerald-400 font-semibold">
-                            {Object.values(produtosSelecionados).reduce((sum, qty) => sum + qty, 0)}
-                          </span>
-                        </p>
-                        <p className="text-gray-300">
-                          Total novos itens:{" "}
-                          <span className="text-emerald-400 font-semibold">
-                            R${" "}
-                            {Object.entries(produtosSelecionados)
-                              .reduce((total, [produtoId, quantidade]) => {
-                                const produto = products.find((p) => p.id === produtoId)
-                                return total + (produto?.preco || 0) * quantidade
-                              }, 0)
-                              .toFixed(2)}
-                          </span>
-                        </p>
-                        {pedidosExistentes.length > 0 && (
-                          <div className="pt-2 border-t border-white/20">
-                            <p className="text-gray-300">
-                              <strong>Total geral da comanda:</strong>{" "}
-                              <span className="text-green-400 font-bold text-lg">
-                                R${" "}
-                                {(
-                                  pedidosExistentes.reduce(
-                                    (total, pedido) => total + pedido.produto?.preco * pedido.quantidade,
-                                    0,
-                                  ) +
-                                  Object.entries(produtosSelecionados).reduce((total, [produtoId, quantidade]) => {
-                                    const produto = products.find((p) => p.id === produtoId)
-                                    return total + (produto?.preco || 0) * quantidade
-                                  }, 0)
-                                ).toFixed(2)}
-                              </span>
-                            </p>
-                          </div>
-                        )}
                       </div>
-                    </div>
+                    )}
 
-                    <div className="space-y-3">
-                      <button
-                        onClick={() => setTelaAtual("principal")}
-                        className="w-full bg-gray-500/20 hover:bg-gray-500/30 text-white py-3 rounded-lg font-medium transition-colors"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={handleFinalizarPedido}
-                        disabled={Object.keys(produtosSelecionados).length === 0 || isLoadingFinalizarPedido}
-                        className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoadingFinalizarPedido ? "Finalizando..." : "Finalizar Pedido"}
-                      </button>
-                      {comandaSelecionada && (
-                        <button
-                          onClick={() => handleExcluirComanda(comandaSelecionada.id)}
-                          className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 py-3 rounded-lg font-medium transition-colors border border-red-500/30"
-                        >
-                          🗑️ Excluir Comanda
-                        </button>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-300">
+                        Comanda: <span className="text-white font-medium">{getOriginalComandaName(nomeComanda)}</span>
+                      </p>
+                      <p className="text-gray-300">
+                        Novos itens selecionados:{" "}
+                        <span className="text-emerald-400 font-semibold">
+                          {Object.values(produtosSelecionados).reduce((sum, qty) => sum + qty, 0)}
+                        </span>
+                      </p>
+                      <p className="text-gray-300">
+                        Total novos itens:{" "}
+                        <span className="text-emerald-400 font-semibold">
+                          R${" "}
+                          {Object.entries(produtosSelecionados)
+                            .reduce((total, [produtoId, quantidade]) => {
+                              const produto = products.find((p) => p.id === produtoId)
+                              return total + (produto?.preco || 0) * quantidade
+                            }, 0)
+                            .toFixed(2)}
+                        </span>
+                      </p>
+                      {pedidosExistentes.length > 0 && (
+                        <div className="pt-2 border-t border-white/20">
+                          <p className="text-gray-300">
+                            <strong>Total geral da comanda:</strong>{" "}
+                            <span className="text-green-400 font-bold text-lg">
+                              R${" "}
+                              {(
+                                pedidosExistentes.reduce(
+                                  (total, pedido) => total + pedido.produto?.preco * pedido.quantidade,
+                                  0,
+                                ) +
+                                Object.entries(produtosSelecionados).reduce((total, [produtoId, quantidade]) => {
+                                  const produto = products.find((p) => p.id === produtoId)
+                                  return total + (produto?.preco || 0) * quantidade
+                                }, 0)
+                              ).toFixed(2)}
+                            </span>
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => setTelaAtual("principal")}
+                      className="w-full bg-gray-500/20 hover:bg-gray-500/30 text-white py-3 rounded-lg font-medium transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleFinalizarPedido}
+                      disabled={Object.keys(produtosSelecionados).length === 0 || isLoadingFinalizarPedido}
+                      className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-3 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoadingFinalizarPedido ? "Finalizando..." : "Finalizar Pedido"}
+                    </button>
+                    {comandaSelecionada && (
+                      <button
+                        onClick={() => handleExcluirComanda(comandaSelecionada.id)}
+                        className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 py-3 rounded-lg font-medium transition-colors border border-red-500/30"
+                      >
+                        🗑️ Excluir Comanda
+                      </button>
+                    )}
+                  </div>
                 </div>
+              </div>
 
-                <div className="lg:col-span-3 lg:order-2">
-                  <div className="mb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                      <h3 className="text-lg font-semibold text-white">🛒 Produtos Disponíveis</h3>
-                      <div className="flex items-center gap-3">
-                        <div className="relative flex-1 sm:flex-none">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder="Buscar produtos..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full sm:w-64"
-                          />
-                        </div>
+              <div className="lg:col-span-3 lg:order-2">
+                <div className="mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                    <h3 className="text-lg font-semibold text-white">🛒 Produtos Disponíveis</h3>
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1 sm:flex-none">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Buscar produtos..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full sm:w-64"
+                        />
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mb-6">
-                      <h4 className="text-sm font-medium text-gray-300 mb-3">📂 Categorias:</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {categorias.map((categoria) => (
-                          <button
-                            key={categoria.id}
-                            onClick={() => setCategoriaFiltro(categoria.id)}
-                            className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
-                              categoriaFiltro === categoria.id
-                                ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-400"
-                                : "bg-white/5 border-white/20 text-gray-300 hover:bg-white/10"
-                            }`}
-                          >
-                            {categoria.nome}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredProducts.map((produto) => (
-                        <motion.div
-                          key={produto.id}
-                          whileHover={{ scale: 1.02 }}
-                          className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl p-4 hover:bg-white/10 transition-all duration-200"
+                  <div className="mb-6">
+                    <h4 className="text-sm font-medium text-gray-300 mb-3">📂 Categorias:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {categorias.map((categoria) => (
+                        <button
+                          key={categoria.id}
+                          onClick={() => setCategoriaFiltro(categoria.id)}
+                          className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
+                            categoriaFiltro === categoria.id
+                              ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-400"
+                              : "bg-white/5 border-white/20 text-gray-300 hover:bg-white/10"
+                          }`}
                         >
-                          <div className="flex flex-col h-full">
-                            {produto.imagem_url && (
-                              <div className="mb-3">
-                                <Image
-                                  src={produto.imagem_url || "/placeholder.svg"}
-                                  alt={produto.nome}
-                                  width={200}
-                                  height={120}
-                                  className="w-full h-24 object-cover rounded-lg"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = "none"
-                                  }}
-                                />
-                              </div>
-                            )}
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-white mb-2">{produto.nome}</h4>
-                              <p className="text-gray-300 text-sm mb-3 line-clamp-2">{produto.descricao}</p>
-                              <p className="text-emerald-400 font-bold text-lg">R$ {produto.preco.toFixed(2)}</p>
-                            </div>
-
-                            <div className="mt-4 space-y-3">
-                              {produtosSelecionados[produto.id] > 0 && (
-                                <div className="flex items-center justify-between bg-white/10 rounded-lg p-2">
-                                  <button
-                                    onClick={() => handleRemoverSelecao(produto.id)}
-                                    className="w-8 h-8 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg flex items-center justify-center transition-colors"
-                                  >
-                                    -
-                                  </button>
-                                  <span className="text-white font-semibold">{produtosSelecionados[produto.id]}</span>
-                                  <button
-                                    onClick={() => handleSelecionarProduto(produto)}
-                                    className="w-8 h-8 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg flex items-center justify-center transition-colors"
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              )}
-
-                              {produtosSelecionados[produto.id] === 0 || !produtosSelecionados[produto.id] ? (
-                                <button
-                                  onClick={() => handleSelecionarProduto(produto)}
-                                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                                >
-                                  <Plus className="w-4 h-4" />
-                                  Adicionar
-                                </button>
-                              ) : null}
-
-                              {produtosSelecionados[produto.id] > 0 && isPorcao(produto) && (
-                                <div className="space-y-2">
-                                  <label className="text-xs text-gray-400">Observações para a cozinha:</label>
-                                  <textarea
-                                    placeholder="Ex: sem cebola, bem passado..."
-                                    value={observacoesProdutos[produto.id] || ""}
-                                    onChange={(e) =>
-                                      setObservacoesProdutos((prev) => ({
-                                        ...prev,
-                                        [produto.id]: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"
-                                    rows={3}
-                                  />
-                                  <p className="text-xs text-gray-500">
-                                    Esta observação aparecerá na cozinha junto com o pedido
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </motion.div>
+                          {categoria.nome}
+                        </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredProducts.map((produto) => (
+                      <motion.div
+                        key={produto.id}
+                        whileHover={{ scale: 1.02 }}
+                        className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl p-4 hover:bg-white/10 transition-all duration-200"
+                      >
+                        <div className="flex flex-col h-full">
+                          {produto.imagem_url && (
+                            <div className="mb-3">
+                              <Image
+                                src={produto.imagem_url || "/placeholder.svg"}
+                                alt={produto.nome}
+                                width={200}
+                                height={120}
+                                className="w-full h-24 object-cover rounded-lg"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none"
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-white mb-2">{produto.nome}</h4>
+                            <p className="text-gray-300 text-sm mb-3 line-clamp-2">{produto.descricao}</p>
+                            <p className="text-emerald-400 font-bold text-lg">R$ {produto.preco.toFixed(2)}</p>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            {produtosSelecionados[produto.id] > 0 && (
+                              <div className="flex items-center justify-between bg-white/10 rounded-lg p-2">
+                                <button
+                                  onClick={() => handleRemoverSelecao(produto.id)}
+                                  className="w-8 h-8 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg flex items-center justify-center transition-colors"
+                                >
+                                  -
+                                </button>
+                                <span className="text-white font-semibold">{produtosSelecionados[produto.id]}</span>
+                                <button
+                                  onClick={() => handleSelecionarProduto(produto)}
+                                  className="w-8 h-8 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg flex items-center justify-center transition-colors"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+
+                            {produtosSelecionados[produto.id] === 0 || !produtosSelecionados[produto.id] ? (
+                              <button
+                                onClick={() => handleSelecionarProduto(produto)}
+                                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                              >
+                                <Plus className="w-4 h-4" />
+                                Adicionar
+                              </button>
+                            ) : null}
+
+                            {produtosSelecionados[produto.id] > 0 && isPorcao(produto) && (
+                              <div className="space-y-2">
+                                <label className="text-xs text-gray-400">Observações para a cozinha:</label>
+                                <textarea
+                                  placeholder="Ex: sem cebola, bem passado..."
+                                  value={observacoesProdutos[produto.id] || ""}
+                                  onChange={(e) =>
+                                    setObservacoesProdutos((prev) => ({
+                                      ...prev,
+                                      [produto.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"
+                                  rows={3}
+                                />
+                                <p className="text-xs text-gray-500">
+                                  Esta observação aparecerá na cozinha junto com o pedido
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
                 </div>
               </div>

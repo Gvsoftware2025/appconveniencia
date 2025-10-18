@@ -213,12 +213,9 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
       setIsRefreshing(true)
 
       const comandasPromise = supabase.from("comandas").select("*").eq("status", "aberta")
-      const pedidosPromise = supabase
-        .from("pedidos")
-        .select(`*,
+      const pedidosPromise = supabase.from("pedidos").select(`*,
           produtos(*)
         `)
-        .or("status.is.null,status.neq.entregue")
 
       const [comandasResult, pedidosResult] = await Promise.all([
         withTimeout(comandasPromise, 90000, "Comandas refresh"),
@@ -284,12 +281,9 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
         const mesasPromise = supabase.from("mesas").select("*")
         const productsPromise = supabase.from("produtos").select("*")
         const comandasPromise = supabase.from("comandas").select("*").eq("status", "aberta")
-        const pedidosPromise = supabase
-          .from("pedidos")
-          .select(`*,
+        const pedidosPromise = supabase.from("pedidos").select(`*,
             produtos(*)
           `)
-          .or("status.is.null,status.neq.entregue")
 
         const [mesasResult, productsResult, comandasResult, pedidosResult] = await Promise.all([
           withTimeout(mesasPromise, 45000, "Mesas load"),
